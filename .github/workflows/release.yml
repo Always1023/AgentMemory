@@ -30,27 +30,34 @@ jobs:
           Copy-Item "extension/content" -Destination $stage -Recurse
           Copy-Item "extension/lib" -Destination $stage -Recurse
           Compress-Archive -Path "$stage/*" -DestinationPath "AgentMemory-Web-$version.zip" -Force
+      - name: Package portable desktop
+        shell: pwsh
+        run: |
+          $dir = "AgentMemory-portable"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "cmd/agentmemory/build/bin/AgentMemory.exe" "$dir/AgentMemory.exe"
+          Copy-Item "PORTABLE-README.md" "$dir/README.md"
+          Compress-Archive -Path "$dir/*" -DestinationPath "AgentMemory-$env:GITHUB_REF_NAME-portable.zip" -Force
       - name: Checksums
         shell: pwsh
         run: |
           $exe = "cmd/agentmemory/build/bin/AgentMemory.exe"
-          $zip = Get-ChildItem "AgentMemory-Web-*.zip" | Select-Object -First 1
+          $extensionZip = Get-ChildItem "AgentMemory-Web-*.zip" | Select-Object -First 1
+          $portableZip = Get-ChildItem "AgentMemory-*-portable.zip" | Select-Object -First 1
           if (-not (Test-Path $exe)) { throw "AgentMemory.exe not found" }
-          if (-not $zip) { throw "extension zip not found" }
-          @($exe, $zip.FullName) | ForEach-Object {
+          if (-not $extensionZip) { throw "extension zip not found" }
+          if (-not $portableZip) { throw "portable zip not found" }
+          @($exe, $extensionZip.FullName, $portableZip.FullName, "PORTABLE-README.md") | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
             "$hash  $(Split-Path $_ -Leaf)"
           } | Set-Content -Encoding ascii SHA256SUMS
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: PORTABLE-README.md
           files: |
             cmd/agentmemory/build/bin/AgentMemory.exe
+            AgentMemory-*-portable.zip
             AgentMemory-Web-*.zip
+            PORTABLE-README.md
             SHA256SUMS
-          body: |
-            AgentMemory v0.2.0
-
-            - 桌面版：Windows x64，运行 AgentMemory.exe。
-            - 网页版捕获插件：Chrome / Edge，解压 zip 后加载已解压的扩展。
-            - 插件支持 DeepSeek、Kimi、腾讯元宝；ChatGPT 入口保留，真实站点尚未校准。

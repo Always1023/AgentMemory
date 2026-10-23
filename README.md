@@ -14,6 +14,8 @@
 
 桌面端的本机渠道以应用「渠道」页为准；插件的安装、取数方式和真实站点验证清单见 `extension/README.md`。Release 同时提供桌面版 `AgentMemory.exe` 和插件 `AgentMemory-Web-<版本>.zip`。
 
+桌面版分发说明见 [PORTABLE-README.md](PORTABLE-README.md)。
+
 ## 收集是怎么工作的：增量收集
 
 首页那个按钮叫「**增量收集**」，意思是**只收新出现的**：
