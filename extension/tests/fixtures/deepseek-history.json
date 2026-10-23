@@ -1,0 +1,28 @@
+{
+  "data": {
+    "biz_data": {
+      "chat_session": {
+        "id": "8f3c2b1a-1111-4222-8333-944455556666",
+        "title": "整理会议纪要",
+        "inserted_at": 1760900000
+      },
+      "chat_messages": [
+        {
+          "role": "ASSISTANT",
+          "inserted_at": 1760900500,
+          "content_blocks": [
+            { "type": "thinking", "content": "先确认目标，再给三点。" },
+            { "type": "text", "content": "可以按三点整理。" }
+          ]
+        },
+        {
+          "role": "USER",
+          "inserted_at": 1760900400,
+          "content_blocks": [
+            { "type": "text", "content": "帮我整理今天的会议纪要。" }
+          ]
+        }
+      ]
+    }
+  }
+}

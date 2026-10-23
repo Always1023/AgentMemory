@@ -1,0 +1,39 @@
+{
+  "sessionId": "7933988c-2fd8-4bbd-9dda-baec8b81872f",
+  "title": "项目结构梳理",
+  "workspaceDirectory": "file:///d%3A/Coding/ReactDeom",
+  "history": [
+    {
+      "message": {
+        "id": "1",
+        "role": "user",
+        "content": [{ "type": "text", "text": "帮我分析一下这个项目的结构" }]
+      },
+      "contextItems": [],
+      "editorState": { "filepath": "" }
+    },
+    {
+      "message": {
+        "id": "2",
+        "role": "assistant",
+        "content": "这是一个 Next.js 项目，入口在 pages/index.tsx。"
+      },
+      "isGatheringContext": false,
+      "promptLogs": []
+    },
+    {
+      "message": {
+        "id": "3",
+        "role": "user",
+        "content": [{ "type": "text", "text": "   " }]
+      }
+    },
+    {
+      "message": {
+        "id": "4",
+        "role": "assistant",
+        "content": ""
+      }
+    }
+  ]
+}

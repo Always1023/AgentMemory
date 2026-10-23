@@ -1,0 +1,142 @@
+<!doctype html>
+<!--
+  AgentMemory 窗口。
+
+  两个视图：
+    · view-wizard  首次运行引导（I-013）：配好之前走这条
+    · view-main    主界面（I-014 起填内容）
+
+  样式只引 tokens.css 与 style.css；不写内联样式，裸值一律留在 tokens.css 里。
+  「主题」跟随系统：tokens.css 用 prefers-color-scheme 覆盖，app.js 把当前判到的
+  那套回给后端写日志——万一看上去没跟着系统变，日志里能看出是前端没判对。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AgentMemory</title>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="shell__head">
+        <div class="head__row">
+          <h1 class="shell__title">AgentMemory</h1>
+          <!-- 明暗小图标（人提的：挪到标题旁边，别单占一条页脚——那会撑出一片空白）：
+               点一下在 跟随系统 → 亮 → 暗 之间循环。选择记在浏览器本地，不进配置文件。 -->
+          <button class="icon-btn" id="theme-toggle" type="button" aria-label="外观">◐</button>
+        </div>
+        <p class="shell__sub" id="headline" hidden></p>
+      </header>
+
+      <!-- 顶部导航栏（人提的）：首页 ⇄ 设置。
+           首次运行引导期间它藏起来——引导是一条要走完的路，不该让人从中间跳走。 -->
+      <nav class="nav" id="nav" hidden>
+        <button class="nav__item" id="nav-main" type="button">首页</button>
+        <button class="nav__item" id="nav-log" type="button">日志</button>
+        <button class="nav__item" id="nav-settings" type="button">设置</button>
+      </nav>
+
+      <!-- ── 首次运行引导 ─────────────────────────────────────────────── -->
+      <main class="shell__main" id="view-wizard" hidden>
+        <p class="steps" id="wizard-progress">第 1 步 · 共 3 步</p>
+
+        <section class="panel scroll-area" data-step="0">
+          <h2 class="panel__title">归档目录</h2>
+          <p class="hint">
+            收上来的聊天记录会变成 Markdown 放在这里。点「选择文件夹」挑一个目录，或直接输入路径。
+          </p>
+          <div class="input-row">
+            <input class="input" id="wizard-archive" type="text" spellcheck="false" />
+            <button class="btn btn--quiet" id="wizard-archive-browse" type="button">选择文件夹</button>
+          </div>
+        </section>
+
+        <section class="panel scroll-area" data-step="1" hidden>
+          <h2 class="panel__title">检测到的渠道</h2>
+          <p class="hint">
+            这些是你机器上已经装了、能收到东西的聊天工具。没有的会标成「未检测到」。
+          </p>
+          <ul class="rows" id="wizard-channels"></ul>
+        </section>
+
+        <section class="panel scroll-area" data-step="2" hidden>
+          <h2 class="panel__title">备份到哪里</h2>
+          <p class="hint">
+            收下来的东西备份到哪，和设置页里那一组是同一套说法：<strong>默认只留在本机</strong>——最省事，不碰网络；
+            想更保险就换成 <strong>Git 仓库</strong>，推到自己的仓库，换机器或硬盘坏了也不丢。选「仅本地」时，
+            也可以把归档目录放进网盘同步目录（OneDrive、百度网盘、夸克网盘等），网盘客户端会替你传上去。
+            不想配就保持「仅本地」，直接点「完成」；之后在设置里随时能改。
+          </p>
+          <div class="choices" id="wizard-modes"></div>
+          <div class="field field--stack" id="wizard-git" hidden></div>
+        </section>
+
+        <p class="error" id="wizard-error" hidden></p>
+
+        <div class="actions actions--end">
+          <button class="btn" id="wizard-back" type="button">上一步</button>
+          <button class="btn btn--primary" id="wizard-next" type="button">下一步</button>
+          <button class="btn" id="wizard-skip" type="button" hidden>跳过</button>
+        </div>
+      </main>
+
+      <!-- ── 主界面 ───────────────────────────────────────────────────── -->
+      <!-- 主界面只管「收」与「看」两件事（人提的：配置类的东西不进这一页）：
+           收 —— 增量收集与进度；看 —— 统计与渠道。要改配置就进设置页。 -->
+      <main class="shell__main" id="view-main" hidden>
+        <!-- 读取统计是异步的：先显示过场，读取完成后再露出下面的数字（I-051）。 -->
+        <section class="reading" id="reading" hidden aria-live="polite">
+          <p class="reading__text" id="reading-text">正在读取数据…</p>
+          <div class="progress" role="progressbar" aria-labelledby="reading-text"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="reading-bar">
+            <span class="progress__fill" id="reading-fill"></span>
+          </div>
+        </section>
+
+        <section class="panel scroll-area">
+          <h2 class="panel__title">渠道</h2>
+          <!-- 数字并进这一段（人提的：不要再单独占一张卡片）：
+               总会话 / 有效会话 / 已收集，另外说一句还有多少待收。 -->
+          <p class="hint" id="channel-stats">—</p>
+          <ul class="rows" id="main-channels"></ul>
+        </section>
+
+        <!-- 主操作跟在渠道下面：一个按钮不必占一整段（人提的）。
+             说明压成一句放在按钮旁边，「第一次全收、之后只收新出现的」不丢。 -->
+        <div class="actions actions--stack" id="main-actions">
+          <button class="btn btn--primary" id="collect" type="button">增量收集</button>
+          <p class="hint" id="collect-progress" hidden></p>
+          <!-- 后端偶尔要说一句（比如「先去设置里配一下」），平时是空的。 -->
+          <p class="hint" id="collect-hint" hidden></p>
+        </div>
+      </main>
+
+      <!-- ── 日志页（I-030）─────────────────────────────────────────────
+           一天一行：那天跑没跑、收下多少、谁发起的、有没有失败。
+           内容进来时现读（定时任务写的账，平时没人看）。 -->
+      <main class="shell__main" id="view-log" hidden>
+        <section class="panel scroll-area">
+          <h2 class="panel__title">运行记录</h2>
+          <p class="hint">一天一行；没跑的那天也占一行。只记最近 90 天。</p>
+          <ul class="rows" id="log-rows"></ul>
+          <p class="hint" id="log-note" hidden></p>
+        </section>
+      </main>
+
+      <!-- ── 设置页（I-017）─────────────────────────────────────────────
+           整窗切页，不是侧边浮层：窗口本来就不大，抽屉再切一刀就装不下了。
+           内容由 app.js 在进来时现建、返回就清空——没进来的时候界面上不留东西。 -->
+      <main class="shell__main" id="view-settings" hidden>
+        <!-- 页头不再重复写「设置」与「← 返回」：当前在哪一页由导航栏说，
+             回首页走导航栏那一项（有未保存改动时照样会先问）。 -->
+        <div class="settings__body scroll-area" id="settings-body"></div>
+        <div class="settings__foot" id="settings-foot"></div>
+      </main>
+
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

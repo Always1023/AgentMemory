@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "AgentMemory Web",
+  "version": "0.2.0",
+  "description": "把网页版 AI 对话批量保存成 Markdown。",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "https://www.kimi.com/*",
+    "https://yuanbao.tencent.com/*",
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AgentMemory Web"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": [
+        "content/request.js",
+        "content/api-content.js",
+        "content/deepseek-parse.js",
+        "content/deepseek.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.kimi.com/*"],
+      "js": [
+        "content/request.js",
+        "content/api-content.js",
+        "content/kimi-parse.js",
+        "content/kimi.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://yuanbao.tencent.com/*"],
+      "js": [
+        "content/request.js",
+        "content/api-content.js",
+        "content/yuanbao-parse.js",
+        "content/yuanbao.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": ["content/chatgpt-parse.js", "content/chatgpt.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

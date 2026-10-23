@@ -1,0 +1,10 @@
+{
+  "sessionId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+  "title": "这一份写到一半就被打断了",
+  "workspaceDirectory": "file:///d%3A/Coding/ReactDeom",
+  "history": [
+    {
+      "message": {
+        "id": "1",
+        "role": "user",
+        "content": [{ "type": "text", "text": "第二行还没写完

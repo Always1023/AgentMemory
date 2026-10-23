@@ -1,0 +1,4 @@
+{"sessionId":"gemini-session-1","startTime":"2026-10-04T10:00:00Z","lastUpdated":"2026-10-04T10:02:00Z"}
+{"id":"u1","timestamp":"2026-10-04T10:00:00Z","type":"user","content":"解释项目结构"}
+{"id":"a1","timestamp":"2026-10-04T10:00:01Z","type":"gemini","content":"先看目录和入口文件。","toolCalls":[{"name":"run_shell_command","args":{"command":"ls"},"resultDisplay":"main.go\nREADME.md"}]}
+{"id":"a2","timestamp":"2026-10-04T10:02:00Z","type":"gemini","content":"项目由入口、配置和渠道适配器组成。"}

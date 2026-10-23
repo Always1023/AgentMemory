@@ -1,0 +1,9 @@
+{"type":"mode","mode":"normal","sessionId":"11111111-2222-3333-4444-555555555555"}
+{"type":"permission-mode","permissionMode":"auto","sessionId":"11111111-2222-3333-4444-555555555555"}
+{"type":"user","isSidechain":false,"cwd":"D:\\work\\demo","sessionId":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-09T13:50:56.642Z","message":{"role":"user","content":"帮我看一下这个项目的结构"}}
+{"type":"assistant","isSidechain":false,"cwd":"D:\\work\\demo","sessionId":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-09T13:51:00.000Z","message":{"role":"assistant","model":"demo-model","content":[{"type":"thinking","thinking":"先列目录看看"},{"type":"tool_use","id":"call_1","name":"Bash","input":{"command":"ls -la"}}]}}
+{"type":"user","isSidechain":false,"cwd":"D:\\work\\demo","sessionId":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-09T13:51:01.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"main.go\ndocs\nREADME.md"}]}}
+{"type":"assistant","isSidechain":false,"cwd":"D:\\work\\demo","sessionId":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-09T13:51:05.000Z","message":{"role":"assistant","model":"demo-model","content":[{"type":"text","text":"这是一个 Go 项目，入口在 main.go。"}]}}
+{"type":"attachment","isSidechain":false,"cwd":"D:\\work\\demo","sessionId":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-09T13:51:06.000Z","attachment":{"type":"file","path":"README.md"}}
+{"type":"system","subtype":"local_command","isMeta":true,"isSidechain":false,"cwd":"D:\\work\\demo","sessionId":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-09T13:51:07.000Z","content":"<command-name>/model</command-name>"}
+{"type":"last-prompt","leafUuid":"abc","sessionId":"11111111-2222-3333-4444-555555555555","lastPrompt":"帮我看一下这个项目的结构"}

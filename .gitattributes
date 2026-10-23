@@ -1,0 +1,5 @@
+# 全部文本文件在仓库里与工作区里都用 LF。
+#
+# 理由：Go 工具链与 gofmt 认 LF；Windows 默认的 core.autocrlf=true 会把工作区
+# 换成 CRLF，于是 `gofmt -l .` 把每个文件都标成「未格式化」，这条检查就废了。
+* text=auto eol=lf

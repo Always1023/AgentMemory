@@ -1,0 +1,715 @@
+/* ============================================================================
+   AgentMemory · 组件
+   ----------------------------------------------------------------------------
+   只消费 tokens.css 里的语义变量，不写裸色值、不写裸尺寸（AC-13，I-012 标准 5）。
+   视觉语言（docs/DESIGN_SYSTEM.md §6）：同底叠加 + 半透明描边分层；小档圆角；
+   中偏紧密度；动效只动颜色与透明度。
+   ============================================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+/* hidden 属性要真的藏起来。
+   这一条是必需的：下面几处（.shell__main / .view-head 等）用了 display: flex，
+   作者样式会盖掉浏览器对 [hidden] 的默认 display: none，于是「藏起来」的
+   视图会一直露在外面，和当前视图叠成一团。 */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: rgb(var(--bg-0));
+  color: rgb(var(--text-primary));
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 切页时淡入一下。只动透明度——动效只动颜色与透明度，这一条也是它的落点。
+   视图是 display 切换的，从 hidden 变成显示时会重放这段动画。 */
+@keyframes view-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 动效只动颜色与透明度；系统说「减少动效」就把过渡与动画都关掉。 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
+
+/* 窗口固定一屏（I-067）：头部与导航不动，内容在自己的框里滚。
+   四个视图都是 .shell__main，共用下面那套边框与滚动条。 */
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--content-max);
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  padding: var(--window-pad);
+}
+
+/* ── 头部 ─────────────────────────────────────────────────────────────── */
+.shell__head {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.shell__title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+.shell__sub {
+  margin: 0;
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-sm);
+}
+
+/* ── 主体：只排版，不滚（I-067）──────────────────────────────────────────
+   窗口本身不滚；会变长的内容交给各自的框（.scroll-area）。
+   主操作与提示留在框外，不跟着内容走。 */
+.shell__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  animation: view-in var(--motion-base) var(--motion-ease);
+}
+
+/* 会变长的内容住进自己的框：面板边框不动，内容在框内走
+   （首页渠道、日志、引导每一步；设置页是表单那一块）。
+   子项不参与压缩，内容多到放不下时才滚，而不是把各行挤扁。 */
+.scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.scroll-area > * {
+  flex: none;
+}
+
+/* 滚动条自己画，别用系统默认的浅色（暗色主题下很跳）。 */
+.scroll-area::-webkit-scrollbar {
+  width: var(--space-2);
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-tertiary));
+  border-radius: var(--radius-full);
+}
+
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--text-quaternary));
+}
+
+/* 面板：同底叠加 —— 底 +1 档，加一条半透明描边；不用阴影分区。 */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: rgb(var(--bg-1));
+  border: var(--border-width) solid rgb(var(--border-translucent));
+  border-radius: var(--radius-lg);
+}
+
+.panel__title {
+  margin: 0;
+  color: rgb(var(--text-secondary));
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.04em;
+}
+
+/* ── 读取统计的过场（I-051）────────────────────────────────────────────
+   只在打开/刷新主界面时出现；读取完成就整段收起，数字随后露出。
+   进度条按实际读取进度改变填充宽度；不为宽度配过渡，保持界面直接、可读。 */
+.reading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: rgb(var(--bg-1));
+  border: var(--border-width) solid rgb(var(--border-translucent));
+  border-radius: var(--radius-lg);
+  animation: view-in var(--motion-base) var(--motion-ease);
+}
+
+.reading__text {
+  margin: 0;
+  color: rgb(var(--text-secondary));
+  font-size: var(--text-sm);
+}
+
+.progress {
+  width: 100%;
+  height: var(--progress-height);
+  overflow: hidden;
+  background: rgb(var(--bg-tertiary));
+  border-radius: var(--radius-full);
+}
+
+.progress__fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: rgb(var(--action-primary-bg));
+  border-radius: inherit;
+}
+
+/* ── 一行「标签 · 值」─────────────────────────────────────────────────── */
+.field {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.field--stack {
+  align-items: stretch;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field__label {
+  flex: none;
+  min-width: var(--field-label);
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-sm);
+}
+
+.field__value {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* ── 输入 ─────────────────────────────────────────────────────────────── */
+.input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  color: rgb(var(--text-primary));
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: rgb(var(--bg-0));
+  border: var(--border-width) solid rgb(var(--border-secondary));
+  border-radius: var(--radius-md);
+  transition: border-color var(--motion-fast) var(--motion-ease);
+}
+
+.input::placeholder {
+  color: rgb(var(--text-quaternary));
+}
+
+.input:focus {
+  border-color: rgb(var(--focus-ring));
+  outline: var(--focus-ring-width) solid rgb(var(--focus-ring));
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ── 选项（备份方式）──────────────────────────────────────────────────── */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  color: rgb(var(--text-secondary));
+  font-size: var(--text-sm);
+  background: rgb(var(--bg-0));
+  border: var(--border-width) solid rgb(var(--border-secondary));
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--motion-ease);
+}
+
+.choice:hover {
+  background: rgb(var(--bg-2));
+}
+
+.choice:has(input:checked) {
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--focus-ring));
+  background: rgb(var(--bg-3));
+}
+
+/* 原生控件（单选圆点、勾选框）跟着主题色走。
+   不写这一条时浏览器给的是默认蓝——那是第三个色系，设计系统里主题色只有绿一套
+   （人提的：备份方式那两个圆点该是绿的）。值取现成的语义变量，不写裸色值。 */
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: rgb(var(--focus-ring));
+}
+
+/* ── 列表（渠道）─────────────────────────────────────────────────────── */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 首页渠道的分段标题（I-066）：已安装有会话 / 已安装无会话 / 未安装，
+   检测失败只在出现时单列。用间距和一行小字分开，不画分隔线（DESIGN_SYSTEM「密度与留白」）。 */
+.rows__group {
+  margin-top: var(--space-2);
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-xs);
+}
+
+.rows__group:first-child {
+  margin-top: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.row__name {
+  flex: none;
+  min-width: var(--field-label);
+  color: rgb(var(--text-primary));
+}
+
+.row__detail {
+  color: rgb(var(--text-tertiary));
+  overflow-wrap: anywhere;
+}
+
+/* 行内动作推到这一行末尾，不挤中间那句说明。 */
+.row__action {
+  margin-left: auto;
+}
+
+/* 行内静默：次要动作给描边款、不给底色，免得和主操作抢注意力。 */
+.btn--quiet {
+  padding: var(--space-1) var(--space-3);
+  color: rgb(var(--text-secondary));
+  font-size: var(--text-xs);
+  background: transparent;
+}
+
+.btn--quiet:hover:not(:disabled) {
+  color: rgb(var(--text-primary));
+  background: rgb(var(--bg-2));
+}
+
+.btn--quiet:disabled {
+  color: rgb(var(--text-quaternary));
+}
+
+/* ── 主操作 ───────────────────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 引导页底部按钮跟设置页一样靠右（I-075）；重走引导共用这一组。 */
+.actions--end {
+  justify-content: flex-end;
+}
+
+.actions--stack {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+/* 页头那一行：标题在左、明暗小图标在右（`.head__end` 已经有 margin-left: auto）。 */
+.head__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* 小图标按钮（明暗切换）：只占一个字的宽度，不抢眼。 */
+.icon-btn {
+  padding: var(--space-1) var(--space-2);
+  color: rgb(var(--text-tertiary));
+  font-family: inherit;
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+  background: none;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--border-translucent));
+}
+
+/* 靠右的一行（设置页的「保存」那一行）。 */
+.input-row--end {
+  justify-content: flex-end;
+}
+
+/* ── 顶部导航栏（首页 / 设置）──────────────────────────────────────────── */
+.nav {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+  border-bottom: var(--border-width) solid rgb(var(--border-translucent));
+}
+
+.nav__item {
+  padding: var(--space-2) var(--space-3);
+  color: rgb(var(--text-secondary));
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  background: none;
+  border: none;
+  border-bottom: var(--border-width) solid transparent;
+  cursor: pointer;
+}
+
+.nav__item:hover {
+  color: rgb(var(--text-primary));
+}
+
+/* 当前那一页：主题色落在这一条下划线上（主题色只落主操作、链接、激活态、焦点环）。 */
+.nav__item--on {
+  color: rgb(var(--text-primary));
+  font-weight: var(--weight-semibold);
+  border-bottom-color: rgb(var(--accent-primary));
+}
+
+.btn {
+  padding: var(--space-2) var(--space-5);
+  color: rgb(var(--text-primary));
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  background: rgb(var(--bg-quaternary));
+  border: var(--border-width) solid rgb(var(--border-translucent));
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--motion-ease);
+}
+
+.btn:hover:not(:disabled) {
+  background: rgb(var(--bg-tertiary));
+}
+
+.btn:disabled {
+  color: rgb(var(--text-quaternary));
+  cursor: default;
+}
+
+.btn--primary {
+  color: rgb(var(--action-primary-fg));
+  background: rgb(var(--action-primary-bg));
+  border-color: transparent;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: rgb(var(--action-primary-bg-hover));
+}
+
+.btn--primary:disabled {
+  color: rgb(var(--text-quaternary));
+  background: rgb(var(--bg-tertiary));
+}
+
+:focus-visible {
+  outline: var(--focus-ring-width) solid rgb(var(--focus-ring));
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ── 辅助文字、步骤、报错 ─────────────────────────────────────────────── */
+.hint {
+  margin: 0;
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-sm);
+}
+
+.steps {
+  margin: 0;
+  color: rgb(var(--text-quaternary));
+  font-size: var(--text-xs);
+}
+
+.error {
+  margin: 0;
+  color: rgb(var(--danger));
+  font-size: var(--text-sm);
+}
+
+/* foot__ok 是设置页底部「已保存」那一句（I-054）：与 .error 互斥，用成功色。 */
+.foot__ok {
+  color: rgb(var(--success));
+}
+
+.shell__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-xs);
+}
+
+/* ── 设置页（I-017）─────────────────────────────────────────────────────
+   整窗切页，不再是侧边浮层：窗口本来就不大，抽屉再切一刀就装不下了。 */
+
+.view-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.view-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+/* 标题行右侧的次要入口（主界面的「设置」）：主操作在下面那一行，别在这儿抢眼。 */
+.head__end {
+  margin-left: auto;
+}
+
+/* 设置页：表单自己滚（.scroll-area），底部「保存 / 放弃改动」留在框外（I-067）。 */
+.settings__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.settings__foot {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 答疑（I-074）：一条一个问题，点开看答案；加条目只加数据，不改样式。 */
+.faq {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.faq__item {
+  padding: var(--space-2) var(--space-3);
+  background: rgb(var(--bg-2));
+  border: var(--border-width) solid rgb(var(--border-translucent));
+  border-radius: var(--radius-md);
+}
+
+.faq__q {
+  cursor: pointer;
+  color: rgb(var(--text-secondary));
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-normal);
+}
+
+.faq__a {
+  margin: var(--space-2) 0 0;
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+
+/* 一行输入：输入框 + 行内动作（「选择文件夹」这类）。 */
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.input-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── 状态点 ───────────────────────────────────────────────────────────── */
+.dot {
+  display: inline-block;
+  flex: none;
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border-radius: var(--radius-full);
+  background: rgb(var(--text-quaternary));
+}
+
+.dot--ok {
+  background: rgb(var(--success));
+}
+
+.dot--warn {
+  background: rgb(var(--warn));
+}
+
+.dot--bad {
+  background: rgb(var(--danger));
+}
+
+/* Git 引导：编号的三步（I-029）。 */
+.git-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-3);
+  /* 编号写在标题里，列表本身不再自动编号（人看到的 1.1 / 2.2 / 3.3 就是这么来的）。 */
+  list-style: none;
+  /* 一条绿色的引用边：一眼看出这是「说明」，不是跟「定时」平级的一块（人提的）。 */
+  border-left: calc(var(--border-width) * 2) solid rgb(var(--action-primary-bg));
+}
+
+.git-step__title {
+  margin: 0 0 var(--space-1);
+  color: rgb(var(--text-secondary));
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+/* 渠道行末尾那个标记：还能收的是转圈箭头（能点），没有新内容的是绿勾。 */
+.mark {
+  flex: none;
+  font-size: var(--text-base);
+  line-height: var(--leading-tight);
+}
+
+.mark--done {
+  color: rgb(var(--success));
+}
+
+.mark--collect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-5);
+  height: var(--space-5);
+  padding: 0;
+  color: rgb(var(--text-tertiary));
+  background: transparent;
+  border: var(--border-width) solid rgb(var(--border-translucent));
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease);
+}
+
+.mark--collect:hover:not(:disabled) {
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--border-secondary));
+}
+
+.mark--collect:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* 那一行正在跑的时候，末尾是百分比数字（看着就不像卡住了）。 */
+.mark--busy {
+  min-width: var(--space-6);
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* 试连的结果：连上了就是一个绿色的勾（人提的：打勾最直观）。 */
+.git-result {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: rgb(var(--text-secondary));
+}
+
+.git-result__mark {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.git-result--ok .git-result__mark {
+  color: rgb(var(--success));
+}
+
+.git-result--bad .git-result__mark {
+  color: rgb(var(--danger));
+}
+
+/* 再小一档的按钮：给引导里那几条用（人提的「按钮太大了」）。 */
+.btn--small {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+/* 现状那一行：比正文再轻一点，这一块整体不该比别的模块抢眼。 */
+.git-now {
+  margin: 0 0 var(--space-3);
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-xs);
+}
+
+.git-step .input-row {
+  margin-top: var(--space-2);
+}
+
+/* 第 2 步那段交给 AI 的话：等宽、可滚，别把页面撑长。 */
+.prompt-box {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-3);
+  /* 高度从间距档位拼（不写裸尺寸：色值与尺寸只从 tokens.css 取）。 */
+  max-height: calc(var(--space-6) * 4);
+  overflow: auto;
+  background: rgb(var(--bg-2));
+  border: var(--border-width) solid rgb(var(--border-primary));
+  border-radius: var(--radius-md);
+  color: rgb(var(--text-secondary));
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

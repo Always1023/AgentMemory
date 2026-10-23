@@ -1,0 +1,237 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f5;
+  --panel: #ffffff;
+  --text: #1f2421;
+  --muted: #68716b;
+  --line: #dfe4df;
+  --accent: #1f7a4d;
+  --accent-ink: #ffffff;
+  --danger: #a33a2b;
+  --focus: #2f8f62;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.55 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.page {
+  width: min(760px, calc(100% - 32px));
+  margin: 28px auto 48px;
+}
+
+.head h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.sub {
+  margin: 6px 0 18px;
+  color: var(--muted);
+}
+
+.panel {
+  margin-top: 14px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.value {
+  margin-top: 2px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--focus);
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0;
+  color: var(--muted);
+}
+
+.check code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+select {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.status {
+  margin: 16px 0 0;
+  color: var(--muted);
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.current {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.counts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.counts div {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  text-align: center;
+}
+
+.counts span {
+  display: block;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.counts small {
+  color: var(--muted);
+}
+
+.panel h2 {
+  margin: 20px 0 8px;
+  font-size: 14px;
+}
+
+.failures {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--danger);
+}
+
+.failures li {
+  margin: 4px 0;
+  word-break: break-all;
+}
+
+@media (max-width: 560px) {
+  .counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+.count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.record-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+
+.record-list li {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.record-list li:last-child {
+  border-bottom: none;
+}
+
+.record-list .muted {
+  color: var(--muted);
+}
+
+.record-list .item-pending {
+  color: var(--accent);
+}
+
+.record-list .item-failed {
+  color: var(--danger);
+}

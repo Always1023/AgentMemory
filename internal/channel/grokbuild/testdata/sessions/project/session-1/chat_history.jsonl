@@ -1,0 +1,5 @@
+{"type":"system","content":"You are Grok."}
+{"type":"user","content":[{"type":"text","text":"看看目录"}]}
+{"type":"assistant","content":"我先看一下。","tool_calls":[{"id":"call_1","type":"function","function":{"name":"run_terminal_cmd","arguments":"{\"command\":\"ls\"}"}}]}
+{"type":"tool","tool_call_id":"call_1","content":"main.go\nREADME.md"}
+{"type":"assistant","content":"目录里有入口和说明文件。"}

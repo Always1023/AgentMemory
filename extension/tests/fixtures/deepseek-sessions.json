@@ -1,0 +1,25 @@
+{
+  "data": {
+    "biz_data": {
+      "chat_sessions": [
+        {
+          "id": "8f3c2b1a-1111-4222-8333-944455556666",
+          "title": "整理会议纪要",
+          "title_type": "USER",
+          "model_type": "default",
+          "pinned": false,
+          "updated_at": 1761000000.123
+        },
+        {
+          "id": "b7a6c5d4-7777-4888-9999-aaaabbbbcccc",
+          "title": "第二段会话",
+          "title_type": "USER",
+          "model_type": "default",
+          "pinned": false,
+          "updated_at": 1760900000
+        }
+      ],
+      "has_more": false
+    }
+  }
+}

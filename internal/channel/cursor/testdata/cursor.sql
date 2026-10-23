@@ -1,0 +1,9 @@
+-- 夹具取自本机 Cursor 的真实库（%APPDATA%/Cursor/User/globalStorage/state.vscdb）：
+-- 只裁掉体积大的字段（richText、context、各类建议），会话文案与结构保持原样。
+-- 里面故意放三种行：一份有对话的、一份空壳会话、一份不是会话的（inlineDiffsData）。
+create table ItemTable (key text primary key, value blob);
+create table cursorDiskKV (key text primary key, value blob);
+insert into ItemTable (key, value) values ('chat.setupContext', '{"entitlement":1,"installed":true}');
+insert into cursorDiskKV (key, value) values ('inlineDiffsData:aaaaaaaa-1111-2222-3333-444444444444', '{"not":"a session"}');
+insert into cursorDiskKV (key, value) values ('composerData:c534b2e5-8415-4427-bdaf-070706463426', '{"composerId": "c534b2e5-8415-4427-bdaf-070706463426", "name": "设置Cursor界面为中文", "createdAt": 1739116756873, "lastUpdatedAt": 1739116835524, "status": "completed", "unifiedMode": "chat", "conversation": [{"type": 1, "bubbleId": "0aa6bcd9-0da9-4555-85aa-f16a732a237e", "text": "我已经按照了中文插件，如何把cursor界面设置为中文"}, {"type": 2, "bubbleId": "9bb7a368-b77f-47fe-8956-2d2151945a4a", "text": "要将 Cursor 编辑器的界面设置为中文，你需要按照以下步骤操作：\n\n1. 打开 Cursor 编辑器\n2. 使用快捷键 `Ctrl+Shift+P` (Windows/Linux) 或 `Cmd+Shift+P` (Mac) 打开命令面板\n3. 输入 \"Configure Display Language\" 或 \"配置显示语言\"\n4. 在弹出的语言选择列表中，选择 \"中文(简体)\" 或 \"Chinese (Simplified)\"\n5. Cursor 会提示你需要重启编辑器才能应用语言更改\n6. 点击 \"重启\" 按钮完成设置\n\n如果你在语言列表中没有看到中文选项，你可能需要先安装中文语言包：\n\n1. 打开 Cursor 的扩展商店\n2. 搜索 \"Chinese\"\n3. 找到并安装 \"Chinese (Simplified) Language Pack for VS Code\"\n4. 安装完成后按照上述步骤设置语言\n\n请注意，由于 Cursor 是基于 VS Code 的，很多语言设置和扩展与 VS Code 是通用的。如果遇到任何问题，也可以参考 VS Code 的中文本地化相关文…"}]}');
+insert into cursorDiskKV (key, value) values ('composerData:9ee10775-8caf-4724-98da-6e80006eda8f', '{"composerId": "9ee10775-8caf-4724-98da-6e80006eda8f", "name": null, "createdAt": 1774333114316, "lastUpdatedAt": null, "status": "none", "unifiedMode": "chat", "conversation": []}');

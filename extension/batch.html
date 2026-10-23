@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentMemory Web · 批量保存</title>
+  <link rel="stylesheet" href="batch.css">
+</head>
+<body>
+  <main class="page">
+    <header class="head">
+      <h1>AgentMemory Web</h1>
+      <p class="sub">把网页版 AI 对话批量保存成 Markdown。只写你选择的目录，不上传内容；默认正常（2 并发）；ChatGPT 最多 3 并发，其他站点最多 2；风控敏感时切慢速。</p>
+    </header>
+
+    <section class="panel">
+      <div class="row">
+        <div>
+          <div class="label">保存目录</div>
+          <div id="dirName" class="value">未选择</div>
+        </div>
+        <button id="chooseDir" type="button">选择目录</button>
+      </div>
+
+      <label class="check">
+        <input id="desktopLayout" type="checkbox">
+        这是桌面端归档目录：写到它下面的 <code>网页版/</code> 子目录
+      </label>
+
+      <div class="row">
+        <label class="field">
+          <span class="label">站点</span>
+          <select id="siteSelect"></select>
+        </label>
+        <label class="field">
+          <span class="label">速度</span>
+          <select id="speedSelect">
+            <option value="slow">慢速（1 并发，最保守）</option>
+            <option value="normal" selected>正常（2 并发）</option>
+            <option value="fast">快速（3 并发，风控风险高）</option>
+          </select>
+        </label>
+        <div class="actions">
+          <button id="start" type="button" class="primary">批量保存</button>
+          <button id="stop" type="button" disabled>停止</button>
+        </div>
+      </div>
+
+      <p id="status" class="status">就绪。</p>
+      <p id="current" class="current"></p>
+    </section>
+
+    <section class="panel">
+      <div class="counts">
+        <div><span id="total">0</span><small>会话</small></div>
+        <div><span id="saved">0</span><small>已保存</small></div>
+        <div><span id="skipped">0</span><small>跳过</small></div>
+        <div><span id="empty">0</span><small>空会话</small></div>
+        <div><span id="failed">0</span><small>失败</small></div>
+      </div>
+
+      <h2>失败项</h2>
+      <ul id="failures" class="failures"></ul>
+
+      <h2>数据库已有 <span id="savedCount" class="count">0</span></h2>
+      <ul id="savedList" class="record-list">
+        <li class="muted">暂无</li>
+      </ul>
+
+      <h2>本轮待获取 / 结果 <span id="itemsCount" class="count">0</span></h2>
+      <ul id="itemsList" class="record-list">
+        <li class="muted">尚未开始</li>
+      </ul>
+    </section>
+  </main>
+
+  <script type="module" src="batch.js"></script>
+</body>
+</html>

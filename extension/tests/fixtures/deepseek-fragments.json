@@ -1,0 +1,30 @@
+{
+  "data": {
+    "biz_data": {
+      "chat_session": {
+        "id": "fragment-session",
+        "title": "片段格式",
+        "inserted_at": 1760700000
+      },
+      "chat_messages": [
+        {
+          "role": "USER",
+          "inserted_at": 1760700000,
+          "fragments": [
+            { "type": "REQUEST", "content": "你好" }
+          ]
+        },
+        {
+          "role": "ASSISTANT",
+          "inserted_at": 1760700010,
+          "fragments": [
+            { "type": "THINK", "content": "思考一下" },
+            { "type": "RESPONSE", "content": "你好！有什么可以帮你？" },
+            { "type": "SEARCH", "content": "这条不应该进正文" },
+            { "type": "TIP", "style": "WARNING", "content": "本回答由 AI 生成，内容仅供参考，请仔细甄别" }
+          ]
+        }
+      ]
+    }
+  }
+}

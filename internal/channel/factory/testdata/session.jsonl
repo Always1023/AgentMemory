@@ -1,0 +1,8 @@
+{"type":"session_start","id":"294db98d-931b-4e6e-bea7-7e076720787f","title":"New Session","sessionTitle":"New Session","owner":"Always","version":2,"cwd":"D:\\work\\demo"}
+{"type":"message","id":"m1","timestamp":"2026-04-02T13:42:06.340Z","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>\nUser system info (win32 10.0.26200)\nToday's date: 2026-04-02\n</system-reminder>"}]}}
+{"type":"message","id":"m2","timestamp":"2026-04-02T13:42:10.000Z","message":{"role":"user","content":[{"type":"text","text":"看一下这个报错"}]}}
+{"type":"todo_state","id":"t1","messageIndex":0,"todos":[{"content":"看报错","status":"pending"}]}
+{"type":"message","id":"m3","timestamp":"2026-04-02T13:42:12.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"先读日志"},{"type":"tool_use","id":"call_1","name":"Read","input":{"path":"app.log"}}]}}
+{"type":"message","id":"m4","timestamp":"2026-04-02T13:42:13.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"stack trace: panic at line 42"}]}}
+{"type":"message","id":"m5","timestamp":"2026-04-02T13:42:16.000Z","message":{"role":"assistant","content":[{"type":"text","text":"日志里是第 42 行的空指针。"}]}}
+{"type":"compaction_state","id":"c1","summaryText":"前面的对话摘要"}

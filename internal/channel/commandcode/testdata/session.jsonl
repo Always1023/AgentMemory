@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"0ad57410-b80d-4dff-be55-7c8547102a47","timestamp":"2026-10-21T18:22:34.511Z","cwd":"D:\\work\\demo"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-10-21T18:22:47.137Z","message":{"role":"user","content":[{"type":"text","text":"帮我看一下这个项目的结构"}]}}
+{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-10-21T18:22:48.137Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"先列目录看看"},{"type":"tool_use","id":"call_1","name":"read_directory","input":{"path":"D:\\work\\demo"}}]}}
+{"type":"message","id":"m3","parentId":"m2","timestamp":"2026-10-21T18:22:49.137Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"main.go\ndocs\nREADME.md"}]}}
+{"type":"message","id":"m4","parentId":"m3","timestamp":"2026-10-21T18:22:52.137Z","message":{"role":"assistant","content":[{"type":"text","text":"这是一个 Go 项目，入口在 main.go。"}]}}

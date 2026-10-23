@@ -1,0 +1,30 @@
+# ── 构建产物 ─────────────────────────────────────────────
+/build/
+# Go 跑测试时的临时编译目录（用 GOTMPDIR 挪到这里）——别进仓库，
+# 也方便把整个项目目录一次加进杀软排除项（见 I-031）
+/.gotmp/
+# Wails 的构建产物：exe 与它留下的备份 `AgentMemory.exe~`（`*.exe` 盖不住带 `~` 的这个）
+/cmd/agentmemory/build/
+# Go 跑测试时的临时编译目录（用 GOTMPDIR 挪到这里）——别进仓库，
+# 也方便把整个项目目录一次加进杀软排除项（见 I-031）
+/.gotmp/
+/frontend/dist/
+/frontend/node_modules/
+*.exe
+*.test
+
+# ── 本机专用 ─────────────────────────────────────────────
+*.local
+
+# ── Wails 生成的 JS 绑定 ────────────────────────────────
+# 前端直接用 window.go 调后端，不用这套桩。
+# 而且生成它要跑一遍刚编出来的 exe（wails build 不带 -skipbindings 时），
+# 杀软对「构建工具去运行新生成的、没签名的可执行文件」很敏感。
+/cmd/agentmemory/frontend/wailsjs/
+
+# 公开仓库不包含本地规划文档与个人配置
+/AGENTS.md
+/docs/
+/opencode.json
+/.qoder/
+/tmp_worldmap/

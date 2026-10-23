@@ -1,0 +1,22 @@
+{
+  "messages": [
+    {
+      "id": "m2",
+      "role": "assistant",
+      "createTime": "2026-10-23T08:00:00.200000Z",
+      "blocks": [
+        { "text": { "content": "你好，有什么可以帮你？" } },
+        { "think": { "content": "先打个招呼。" } }
+      ]
+    },
+    {
+      "id": "m1",
+      "role": "user",
+      "createTime": "2026-10-23T08:00:00.100000Z",
+      "blocks": [
+        { "text": { "content": "你好" } }
+      ]
+    }
+  ],
+  "nextPageToken": ""
+}

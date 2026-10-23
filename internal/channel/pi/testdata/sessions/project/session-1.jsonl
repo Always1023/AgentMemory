@@ -1,0 +1,5 @@
+{"type":"session","version":3,"id":"pi-session-1","cwd":"D:/work/AgentMemory","timestamp":"2026-10-04T10:00:00Z"}
+{"type":"session_info","id":"name-1","parentId":null,"name":"项目检查"}
+{"type":"message","id":"u1","parentId":"name-1","message":{"role":"user","content":[{"type":"text","text":"检查项目"}],"timestamp":1760000000000}}
+{"type":"message","id":"a1","parentId":"u1","message":{"role":"assistant","content":[{"type":"text","text":"我先运行测试。"},{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"go test ./..."}}],"timestamp":1760000001000}}
+{"type":"message","id":"r1","parentId":"a1","message":{"role":"toolResult","content":[{"type":"text","text":"ok"}],"timestamp":1760000002000}}

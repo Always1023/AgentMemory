@@ -1,0 +1,19 @@
+{
+  "conversations": [
+    {
+      "id": "conv-1111",
+      "agentId": "agentA",
+      "title": "元宝会话一",
+      "firstRepliedAt": 1760900000,
+      "lastRepliedAt": 1760900100
+    },
+    {
+      "id": "conv-2222",
+      "title": "元宝会话二",
+      "firstRepliedAt": 1760800000
+    }
+  ],
+  "pagination": {
+    "totalResults": 2
+  }
+}

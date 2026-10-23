@@ -1,0 +1,7 @@
+{"type":"workspace-directories","sessionId":"7f3c2a10-1111-4222-8333-944455556666","workspaceDirectories":["D:\\work\\demo"]}
+{"type":"runtime-config","sessionId":"7f3c2a10-1111-4222-8333-944455556666","timestamp":1792609331000}
+{"type":"user","sessionId":"7f3c2a10-1111-4222-8333-944455556666","cwd":"D:\\work\\demo","timestamp":"2026-10-21T19:02:30.250Z","humanInput":{"text":"另一份重复的输入"},"message":{"role":"user","content":[{"type":"text","text":"帮我看一下这个项目的结构"}]}}
+{"type":"assistant","sessionId":"7f3c2a10-1111-4222-8333-944455556666","cwd":"D:\\work\\demo","timestamp":"2026-10-21T19:02:36.120Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"先列目录看看"},{"type":"tool_use","name":"read_directory","input":{"path":"D:\\work\\demo"}}]}}
+{"type":"user","sessionId":"7f3c2a10-1111-4222-8333-944455556666","cwd":"D:\\work\\demo","timestamp":"2026-10-21T19:02:41.003Z","message":{"role":"user","content":[{"type":"tool_result","content":[{"type":"text","text":"main.go\ngo.mod"}]}]}}
+{"type":"assistant","sessionId":"7f3c2a10-1111-4222-8333-944455556666","cwd":"D:\\work\\demo","timestamp":"2026-10-21T19:02:45.780Z","message":{"role":"assistant","content":[{"type":"text","text":"这是一个 Go 项目。"}]}}
+{"type":"attachment","sessionId":"7f3c2a10-1111-4222-8333-944455556666","cwd":"D:\\work\\demo","timestamp":"2026-10-21T19:02:46Z"}

@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "chat": {
+        "id": "c1c1c1c1-1111-4222-8333-944455556666",
+        "name": "Kimi 会话一",
+        "createTime": "2026-10-23T08:00:00.100000Z",
+        "updateTime": "2026-10-23T08:10:00.000000Z"
+      }
+    },
+    {
+      "item": {
+        "value": {
+          "id": "c2c2c2c2-7777-4888-9999-aaaabbbbcccc",
+          "name": "Kimi 会话二",
+          "createTime": "2026-10-22T08:00:00.000000Z"
+        }
+      }
+    }
+  ],
+  "nextPageToken": "next-page"
+}

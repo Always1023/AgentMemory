@@ -1,0 +1,2 @@
+{"type":"user","cwd":"D:\\work\\demo","sessionId":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-09T13:50:56.642Z","message":{"role":"user","content":"这一份写到一半就被打断了"}}
+{"type":"assistant","cwd":"D:\\work\\demo","sessionId":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-09T13:51:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"我正在回答，但是这一行没有写完

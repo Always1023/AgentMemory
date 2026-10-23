@@ -1,0 +1,56 @@
+name: Release
+on:
+  push:
+    tags:
+      - "v*"
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Build desktop app
+        working-directory: cmd/agentmemory
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+          wails build -trimpath
+      - name: Package web extension
+        shell: pwsh
+        run: |
+          $version = (Get-Content extension/manifest.json -Raw | ConvertFrom-Json).version
+          $stage = "build/extension"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $runtime = @("manifest.json","batch.html","batch.css","batch.js","popup.html","popup.css","popup.js","README.md")
+          foreach ($file in $runtime) { Copy-Item "extension/$file" -Destination $stage }
+          Copy-Item "extension/content" -Destination $stage -Recurse
+          Copy-Item "extension/lib" -Destination $stage -Recurse
+          Compress-Archive -Path "$stage/*" -DestinationPath "AgentMemory-Web-$version.zip" -Force
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $exe = "cmd/agentmemory/build/bin/AgentMemory.exe"
+          $zip = Get-ChildItem "AgentMemory-Web-*.zip" | Select-Object -First 1
+          if (-not (Test-Path $exe)) { throw "AgentMemory.exe not found" }
+          if (-not $zip) { throw "extension zip not found" }
+          @($exe, $zip.FullName) | ForEach-Object {
+            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
+            "$hash  $(Split-Path $_ -Leaf)"
+          } | Set-Content -Encoding ascii SHA256SUMS
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cmd/agentmemory/build/bin/AgentMemory.exe
+            AgentMemory-Web-*.zip
+            SHA256SUMS
+          body: |
+            AgentMemory v0.2.0
+
+            - 桌面版：Windows x64，运行 AgentMemory.exe。
+            - 网页版捕获插件：Chrome / Edge，解压 zip 后加载已解压的扩展。
+            - 插件支持 DeepSeek、Kimi、腾讯元宝；ChatGPT 入口保留，真实站点尚未校准。

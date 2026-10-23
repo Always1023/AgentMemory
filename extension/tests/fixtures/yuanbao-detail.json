@@ -1,0 +1,35 @@
+{
+  "sessionTitle": "元宝会话一",
+  "firstRepliedAt": 1760900000,
+  "convs": [
+    {
+      "id": "a1",
+      "speaker": "ai",
+      "index": 1,
+      "createTime": 1760900010,
+      "speechesV2": [
+        {
+          "content": [
+            { "type": "think", "content": "先算一下。" },
+            { "type": "text", "msg": "答案是 42。" },
+            { "type": "searchGuid", "docs": [{ "title": "忽略", "url": "https://example.com" }] }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "h1",
+      "speaker": "human",
+      "index": 0,
+      "createTime": 1760900000,
+      "speechesV2": [
+        {
+          "content": [
+            { "type": "text", "msg": "答案是多少？" }
+          ]
+        }
+      ]
+    }
+  ],
+  "hasMore": false
+}
