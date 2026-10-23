@@ -38,12 +38,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           Copy-Item "cmd/agentmemory/build/bin/AgentMemory.exe" "$dir/AgentMemory.exe"
           Copy-Item "AgentMemory-Web-$version.zip" "$dir/AgentMemory-Web-$version.zip"
-          Copy-Item "PORTABLE-README.md" "$dir/README.md"
+          Copy-Item "README.md" "$dir/README.md"
           Compress-Archive -Path "$dir/*" -DestinationPath "AgentMemory-$env:GITHUB_REF_NAME-exe-plugin.zip" -Force
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: PORTABLE-README.md
+          body_path: README.md
           files: |
             cmd/agentmemory/build/bin/AgentMemory.exe
             AgentMemory-*-exe-plugin.zip
