@@ -43,7 +43,13 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: README.md
+          tag_name: v0.2.1
+          body: |
+            ## 下载选择
+
+            - `AgentMemory-v0.2.1-exe-plugin.zip`：桌面版 + 网页版插件 + 这条说明（推荐，一次下齐）。
+            - `AgentMemory.exe`：只要桌面版。
+            - `AgentMemory-Web-0.2.0.zip`：只要网页版插件。
           files: |
             cmd/agentmemory/build/bin/AgentMemory.exe
             AgentMemory-*-exe-plugin.zip
