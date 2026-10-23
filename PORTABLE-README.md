@@ -2,6 +2,12 @@
 
 构建日期：2026-10-23
 
+## 下载选择
+
+- `AgentMemory-v0.2.1-exe-plugin.zip`：桌面版 + 网页版插件 + 这份说明（推荐，一次下齐）。
+- `AgentMemory.exe`：只要桌面版。
+- `AgentMemory-Web-0.2.0.zip`：只要网页版插件。
+
 ## 一、这是什么
 
 AgentMemory 把本机 AI 编码工具的聊天记录整理成 Markdown，存到你指定的目录。
@@ -107,5 +113,5 @@ AgentMemory 现在由两个配套部分组成：桌面端 `AgentMemory.exe` 和�
 ## 十、版本
 
 - 构建日期：2026-10-23
-- 文件：`AgentMemory.exe`、`AgentMemory-Web-0.2.0.zip`、`README.md`
+- 文件：`AgentMemory.exe`、`AgentMemory-v0.2.1-exe-plugin.zip`、`AgentMemory-Web-0.2.0.zip`、`README.md`
 - 说明：本包为免安装版；程序未签名，分发前请确认来源可信。

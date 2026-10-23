@@ -30,34 +30,21 @@ jobs:
           Copy-Item "extension/content" -Destination $stage -Recurse
           Copy-Item "extension/lib" -Destination $stage -Recurse
           Compress-Archive -Path "$stage/*" -DestinationPath "AgentMemory-Web-$version.zip" -Force
-      - name: Package portable desktop
+      - name: Package exe + plugin bundle
         shell: pwsh
         run: |
-          $dir = "AgentMemory-portable"
+          $version = (Get-Content extension/manifest.json -Raw | ConvertFrom-Json).version
+          $dir = "AgentMemory-bundle"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           Copy-Item "cmd/agentmemory/build/bin/AgentMemory.exe" "$dir/AgentMemory.exe"
+          Copy-Item "AgentMemory-Web-$version.zip" "$dir/AgentMemory-Web-$version.zip"
           Copy-Item "PORTABLE-README.md" "$dir/README.md"
-          Compress-Archive -Path "$dir/*" -DestinationPath "AgentMemory-$env:GITHUB_REF_NAME-portable.zip" -Force
-      - name: Checksums
-        shell: pwsh
-        run: |
-          $exe = "cmd/agentmemory/build/bin/AgentMemory.exe"
-          $extensionZip = Get-ChildItem "AgentMemory-Web-*.zip" | Select-Object -First 1
-          $portableZip = Get-ChildItem "AgentMemory-*-portable.zip" | Select-Object -First 1
-          if (-not (Test-Path $exe)) { throw "AgentMemory.exe not found" }
-          if (-not $extensionZip) { throw "extension zip not found" }
-          if (-not $portableZip) { throw "portable zip not found" }
-          @($exe, $extensionZip.FullName, $portableZip.FullName, "PORTABLE-README.md") | ForEach-Object {
-            $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
-            "$hash  $(Split-Path $_ -Leaf)"
-          } | Set-Content -Encoding ascii SHA256SUMS
+          Compress-Archive -Path "$dir/*" -DestinationPath "AgentMemory-$env:GITHUB_REF_NAME-exe-plugin.zip" -Force
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           body_path: PORTABLE-README.md
           files: |
             cmd/agentmemory/build/bin/AgentMemory.exe
-            AgentMemory-*-portable.zip
+            AgentMemory-*-exe-plugin.zip
             AgentMemory-Web-*.zip
-            PORTABLE-README.md
-            SHA256SUMS
