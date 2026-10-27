@@ -155,9 +155,9 @@ func TestSameSessionAcrossResumedFilesKeepsItsOwnArchive(t *testing.T) {
 	base.Title = "帮我把站点桩的时序图刷进文档"
 
 	files := []string{
-		`C:\Users\test\.codex\sessions\2026\09\24\rollout-2026-09-24T15-39-38-` + sessionID + `.jsonl`,
-		`C:\Users\test\.codex\sessions\2026\09\24\rollout-2026-09-24T15-41-43-` + sessionID + `_01a0d25c-f8a1-7b21-8289-774ac6e104c6.jsonl`,
-		`C:\Users\test\.codex\sessions\2026\09\24\rollout-2026-09-24T15-43-46-` + sessionID + `_01a0d25e-d93e-7350-be26-76c6f5b7b2b7.jsonl`,
+		`C:\Users\Always\.codex\sessions\2026\09\24\rollout-2026-09-24T15-39-38-` + sessionID + `.jsonl`,
+		`C:\Users\Always\.codex\sessions\2026\09\24\rollout-2026-09-24T15-41-43-` + sessionID + `_01a0d25c-f8a1-7b21-8289-774ac6e104c6.jsonl`,
+		`C:\Users\Always\.codex\sessions\2026\09\24\rollout-2026-09-24T15-43-46-` + sessionID + `_01a0d25e-d93e-7350-be26-76c6f5b7b2b7.jsonl`,
 	}
 
 	paths := map[string]bool{}
@@ -207,10 +207,10 @@ func TestIdentityFallsBackWhenSessionIDIsEmpty(t *testing.T) {
 	// 标识为空的两个会话，来源文件不同 → 路径必须不同。
 	a := sampleSession()
 	a.ID = ""
-	a.SourceFile = `C:\Users\test\.claude\projects\X\a.jsonl`
+	a.SourceFile = `C:\Users\Always\.claude\projects\X\a.jsonl`
 	b := sampleSession()
 	b.ID = ""
-	b.SourceFile = `C:\Users\test\.claude\projects\X\b.jsonl`
+	b.SourceFile = `C:\Users\Always\.claude\projects\X\b.jsonl`
 	if Plan(root, a, "Claude Code") == Plan(root, b, "Claude Code") {
 		t.Error("标识为空、来源文件不同，两个会话仍然撞了名")
 	}

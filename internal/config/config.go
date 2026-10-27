@@ -83,6 +83,9 @@ type Config struct {
 	Channels map[string]bool `json:"channels"`
 	Backup   Backup          `json:"backup"`
 	Schedule Schedule        `json:"schedule"`
+	// MCPEnabled 是「对外只读接口」的总开关（F15）：关着时 `--mcp` 拒绝启动。
+	// 默认关（PRD 待确认项按最保守取值）。
+	MCPEnabled bool `json:"mcp_enabled,omitempty"`
 }
 
 // Default 返回一份安全的默认配置：宁可空，不要错。

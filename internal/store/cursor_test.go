@@ -1,7 +1,6 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -12,6 +11,21 @@ import (
 
 	"github.com/Always1023/AgentMemory/internal/channel"
 )
+
+// openTestDBForCursor 开一个临时主库并取水位句柄，生产路径的等价物。
+func openTestCursor(t *testing.T) (*DB, *Cursor) {
+	t.Helper()
+	db := openTestDB(t)
+	// 这些用例讲的是「换代回填之后」的水位语义：先记下回填完成。
+	if err := db.MarkL1Backfilled(); err != nil {
+		t.Fatalf("记回填完成: %v", err)
+	}
+	c, err := db.OpenCursor()
+	if err != nil {
+		t.Fatalf("打开水位: %v", err)
+	}
+	return db, c
+}
 
 // countingAdapter 记下自己被读了几次、读了多少字节——用来量「第二轮读了几次」。
 type countingAdapter struct {
@@ -64,7 +78,7 @@ func collectOnce(t *testing.T, c *Cursor, files []channel.SourceFile, ad *counti
 		if _, err := ad.Parse(sf); err != nil {
 			t.Fatalf("Parse(%s): %v", sf.Path, err)
 		}
-		c.MarkProcessed(sf, "归档/"+filepath.Base(sf.Path)+".md")
+		c.MarkProcessed(sf, "导出/"+filepath.Base(sf.Path)+".md")
 	}
 }
 
@@ -72,16 +86,12 @@ func collectOnce(t *testing.T, c *Cursor, files []channel.SourceFile, ad *counti
 func TestSecondCollectReadsNothing(t *testing.T) {
 	root := t.TempDir()
 	files := makeSourceFiles(t, filepath.Join(root, "sources"), "a.jsonl", "b.jsonl", "c.jsonl")
-	cursorDir := filepath.Join(root, "state")
 
 	adapter := &countingAdapter{}
+	db, first := openTestCursor(t)
 
-	first, err := Open(cursorDir)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
 	if !first.Rebuilt() {
-		t.Error("第一次打开（还没有游标文件）应当标为重建")
+		t.Error("第一次打开（主库还没有账）应当标为重建")
 	}
 	collectOnce(t, first, files, adapter)
 	if adapter.reads != len(files) {
@@ -92,16 +102,16 @@ func TestSecondCollectReadsNothing(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	// 第二轮：重新打开游标，文件一个都没变。
-	second, err := Open(cursorDir)
+	// 第二轮：重新打开水位，文件一个都没变。
+	second, err := db.OpenCursor()
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("OpenCursor: %v", err)
 	}
 	if second.Rebuilt() {
-		t.Error("第二轮不该是重建——游标就在那儿")
+		t.Error("第二轮不该是重建——账就在主库里")
 	}
 	if second.Len() != len(files) {
-		t.Errorf("游标里有 %d 条，想要 %d 条", second.Len(), len(files))
+		t.Errorf("水位里有 %d 条，想要 %d 条", second.Len(), len(files))
 	}
 	collectOnce(t, second, files, adapter)
 
@@ -111,8 +121,6 @@ func TestSecondCollectReadsNothing(t *testing.T) {
 	if got := adapter.bytes - firstBytes; got != 0 {
 		t.Errorf("第二次又读了 %d 字节，想要 0 字节", got)
 	}
-	t.Logf("第一轮读 %d 次 / %d 字节；第二轮读 %d 次 / %d 字节",
-		firstReads, firstBytes, adapter.reads-firstReads, adapter.bytes-firstBytes)
 }
 
 // 验收标准 2：文件修改时间或大小变化后，该文件重新进入待处理。
@@ -124,11 +132,8 @@ func TestReprocessesWhenSizeOrModTimeChanges(t *testing.T) {
 		ModTime: time.Date(2026, 1, 5, 10, 0, 0, 0, time.UTC),
 	}
 
-	c, err := Open(dir)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	c.MarkProcessed(base, "归档/a.md")
+	_, c := openTestCursor(t)
+	c.MarkProcessed(base, "导出/a.md")
 
 	if c.NeedsProcessing(base) {
 		t.Error("刚记过的文件不该又要处理")
@@ -153,18 +158,14 @@ func TestReprocessesWhenSizeOrModTimeChanges(t *testing.T) {
 	}
 }
 
-// 大小相同、只有修改时间变了：内容一致就不重新处理，只刷新游标元数据（I-062）。
+// 大小相同、只有修改时间变了：内容一致就不重新处理，只刷新水位元数据（I-062）。
 func TestFingerprintIgnoresModTimeOnlyChange(t *testing.T) {
 	root := t.TempDir()
 	files := makeSourceFiles(t, filepath.Join(root, "sources"), "a.jsonl")
 	sf := files[0]
 
-	dir := filepath.Join(root, "state")
-	c, err := Open(dir)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	c.MarkProcessed(sf, "归档/a.md")
+	db, c := openTestCursor(t)
+	c.MarkProcessed(sf, "导出/a.md")
 	entry, ok := c.Entry(sf.Path)
 	if !ok || entry.Fingerprint == "" {
 		t.Fatalf("处理过之后应当记下内容指纹: %+v", entry)
@@ -181,9 +182,9 @@ func TestFingerprintIgnoresModTimeOnlyChange(t *testing.T) {
 	touched := sf
 	touched.ModTime = touchedTime
 
-	c2, err := Open(dir)
+	c2, err := db.OpenCursor()
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("重开水位: %v", err)
 	}
 	if change := c2.Check(touched); change != ChangeNone {
 		t.Errorf("内容没变，Check = %v，想要 ChangeNone", change)
@@ -198,13 +199,13 @@ func TestFingerprintIgnoresModTimeOnlyChange(t *testing.T) {
 	if err := c2.Save(); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	c3, err := Open(dir)
+	c3, err := db.OpenCursor()
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("再重开: %v", err)
 	}
 	entry, _ = c3.Entry(sf.Path)
 	if !entry.ModTime.Equal(touchedTime) {
-		t.Errorf("游标里的修改时间没刷新：%v", entry.ModTime)
+		t.Errorf("水位里的修改时间没刷新：%v", entry.ModTime)
 	}
 	if entry.ProcessedAt.IsZero() {
 		t.Error("刷新元数据不该丢掉处理时刻")
@@ -217,11 +218,8 @@ func TestFingerprintDetectsSameSizeContentChange(t *testing.T) {
 	files := makeSourceFiles(t, filepath.Join(root, "sources"), "a.jsonl")
 	sf := files[0]
 
-	c, err := Open(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	c.MarkProcessed(sf, "归档/a.md")
+	_, c := openTestCursor(t)
+	c.MarkProcessed(sf, "导出/a.md")
 
 	// 改成同样长度的另一段内容，并把修改时间推到未来。
 	if err := os.WriteFile(sf.Path, []byte("内容 b.jsonl\n"), 0o600); err != nil {
@@ -242,20 +240,33 @@ func TestFingerprintDetectsSameSizeContentChange(t *testing.T) {
 	}
 }
 
-// 旧游标没有指纹：大小相同、修改时间不同时返回 Unknown，交上层比归档；Adopt 后不再处理。
+// 旧账（index.json）没有指纹：大小相同、修改时间不同时返回 Unknown，交上层比导出；
+// Adopt 后不再处理。这一份走「旧 JSON 导入主库」的路径。
 func TestOldCursorWithoutFingerprintIsUnknown(t *testing.T) {
 	root := t.TempDir()
 	files := makeSourceFiles(t, filepath.Join(root, "sources"), "a.jsonl")
 	sf := files[0]
 
-	dir := filepath.Join(root, "state")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	old := fmt.Sprintf(`{"version":1,"entries":[{"path":%q,"size":%d,"mod_time":%q,"archive_path":"导出/a.md"}]}`,
+		sf.Path, sf.Size, sf.ModTime.UTC().Format(time.RFC3339Nano))
+	if err := os.WriteFile(filepath.Join(root, FileName), []byte(old), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := fmt.Sprintf(`{"version":1,"entries":[{"path":%q,"size":%d,"mod_time":%q,"archive_path":"归档/a.md"}]}`,
-		sf.Path, sf.Size, sf.ModTime.UTC().Format(time.RFC3339Nano))
-	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(old), 0o600); err != nil {
-		t.Fatal(err)
+
+	db, err := OpenDB(root)
+	if err != nil {
+		t.Fatalf("打开主库（应顺带导入旧账）: %v", err)
+	}
+	defer db.Close()
+	if err := db.MarkL1Backfilled(); err != nil {
+		t.Fatalf("记回填完成: %v", err)
+	}
+	c, err := db.OpenCursor()
+	if err != nil {
+		t.Fatalf("OpenCursor: %v", err)
+	}
+	if c.Len() != 1 {
+		t.Fatalf("旧账应导入 1 条，实际 %d", c.Len())
 	}
 
 	touchedTime := sf.ModTime.Add(2 * time.Hour)
@@ -265,12 +276,8 @@ func TestOldCursorWithoutFingerprintIsUnknown(t *testing.T) {
 	touched := sf
 	touched.ModTime = touchedTime
 
-	c, err := Open(dir)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
 	if change := c.Check(touched); change != ChangeUnknown {
-		t.Errorf("旧游标缺指纹，Check = %v，想要 ChangeUnknown", change)
+		t.Errorf("旧账缺指纹，Check = %v，想要 ChangeUnknown", change)
 	}
 	if !c.NeedsProcessing(touched) {
 		t.Error("比不了内容时要保守地重新处理")
@@ -294,10 +301,7 @@ func TestVirtualPathFallsBackToSizeAndModTime(t *testing.T) {
 		ModTime: time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC),
 	}
 
-	c, err := Open(filepath.Join(t.TempDir(), "state"))
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	_, c := openTestCursor(t)
 	c.MarkProcessed(sf, "")
 	entry, _ := c.Entry(sf.Path)
 	if entry.Fingerprint != "" {
@@ -318,8 +322,8 @@ func TestVirtualPathFallsBackToSizeAndModTime(t *testing.T) {
 	}
 }
 
-// 验收标准 4：游标文件损坏时重建，不导致整轮失败。
-func TestCorruptCursorRebuilds(t *testing.T) {
+// 验收标准 4：旧账损坏时按空账重来，不导致整轮失败。
+func TestCorruptLegacyCursorImportsAsEmpty(t *testing.T) {
 	cases := map[string]string{
 		"完全不是 JSON": "这不是 JSON",
 		"半截 JSON":   `{"version":1,"entries":[{"path":"x"`,
@@ -334,9 +338,13 @@ func TestCorruptCursorRebuilds(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		c, err := Open(dir)
+		db, err := OpenDB(dir)
 		if err != nil {
 			t.Fatalf("%s：不该让整轮失败: %v", name, err)
+		}
+		c, err := db.OpenCursor()
+		if err != nil {
+			t.Fatalf("%s：打开水位不该失败: %v", name, err)
 		}
 		if !c.Rebuilt() {
 			t.Errorf("%s：应当标为重建", name)
@@ -349,6 +357,7 @@ func TestCorruptCursorRebuilds(t *testing.T) {
 		if err := c.Save(); err != nil {
 			t.Errorf("%s：重建后应当能正常存回去: %v", name, err)
 		}
+		db.Close()
 	}
 }
 
@@ -360,9 +369,17 @@ func TestEntryWithoutPathIsDroppedNotRebuilt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, err := Open(dir)
+	db, err := OpenDB(dir)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("打开主库: %v", err)
+	}
+	defer db.Close()
+	if err := db.MarkL1Backfilled(); err != nil {
+		t.Fatalf("记回填完成: %v", err)
+	}
+	c, err := db.OpenCursor()
+	if err != nil {
+		t.Fatalf("OpenCursor: %v", err)
 	}
 	if c.Rebuilt() {
 		t.Error("只是有一条缺字段，不该整份重建")
@@ -379,74 +396,49 @@ func TestEntryWithoutPathIsDroppedNotRebuilt(t *testing.T) {
 	}
 }
 
-func TestOnlyCorruptFileFailsWholeRunNever(t *testing.T) {
-	// 游标路径被指到一个普通文件上：这是配置错了，要报出来。
-	// 装作空游标的话，坏消息会推迟到 Save 才炸，且那时已经白读了一遍。
+// 主库目录被指到一个普通文件上：配置错了，要报出来，不装作空账。
+func TestOpenDBRefusesFileAsDir(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(file); err == nil {
-		t.Error("路径不是目录时应当报错，而不是假装空游标")
+	if _, err := OpenDB(file); err == nil {
+		t.Error("路径不是目录时应当报错，而不是假装空账")
 	}
 }
 
-func TestSaveCreatesDirAndLeavesNoTemp(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "state", "nested")
-
-	c, err := Open(dir)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	c.MarkProcessed(channel.SourceFile{Path: "D:/a.jsonl", Size: 1, ModTime: time.Unix(1, 0)}, "归档/a.md")
-	c.MarkProcessed(channel.SourceFile{Path: "D:/b.jsonl", Size: 2, ModTime: time.Unix(2, 0)}, "归档/b.md")
+// Save 落进主库：重开一遍数字对得上（原「不留临时文件」的等价断言）。
+func TestSavePersistsToMainDB(t *testing.T) {
+	db, c := openTestCursor(t)
+	c.MarkProcessed(channel.SourceFile{Path: "D:/a.jsonl", Size: 1, ModTime: time.Unix(1, 0)}, "导出/a.md")
+	c.MarkProcessed(channel.SourceFile{Path: "D:/b.jsonl", Size: 2, ModTime: time.Unix(2, 0)}, "导出/b.md")
 	if err := c.Save(); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	if len(names) != 1 || names[0] != FileName {
-		t.Errorf("游标目录里应当只有 %s，实际 %v", FileName, names)
-	}
-
-	// 再存一次（覆盖已存在的文件）也要正常。
+	// 再存一次（整表替换）也要正常。
 	c.MarkProcessed(channel.SourceFile{Path: "D:/c.jsonl", Size: 3, ModTime: time.Unix(3, 0)}, "")
 	if err := c.Save(); err != nil {
 		t.Fatalf("第二次 Save: %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(dir, FileName))
+	again, err := db.OpenCursor()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("重开: %v", err)
 	}
-	var f cursorFile
-	if err := json.Unmarshal(raw, &f); err != nil {
-		t.Fatalf("存出来的不是合法 JSON: %v", err)
+	if again.Len() != 3 {
+		t.Errorf("重开后 %d 条，想要 3 条", again.Len())
 	}
-	if f.Version != fileVersion {
-		t.Errorf("版本 = %d，想要 %d", f.Version, fileVersion)
-	}
-	if len(f.Entries) != 3 {
-		t.Errorf("落盘 %d 条，想要 3 条", len(f.Entries))
+	if e, _ := again.Entry("D:/c.jsonl"); e.Size != 3 || e.ArchivePath != "" {
+		t.Errorf("最后一条没对上: %+v", e)
 	}
 }
 
 func TestEntriesSortedAndKeepArchivePath(t *testing.T) {
-	dir := t.TempDir()
-	c, err := Open(dir)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	c.MarkProcessed(channel.SourceFile{Path: "D:/c.jsonl", Size: 3, ModTime: time.Unix(3, 0)}, "归档/c.md")
-	c.MarkProcessed(channel.SourceFile{Path: "D:/a.jsonl", Size: 1, ModTime: time.Unix(1, 0)}, "归档/a.md")
-	c.MarkProcessed(channel.SourceFile{Path: "D:/b.jsonl", Size: 2, ModTime: time.Unix(2, 0)}, "归档/b.md")
+	_, c := openTestCursor(t)
+	c.MarkProcessed(channel.SourceFile{Path: "D:/c.jsonl", Size: 3, ModTime: time.Unix(3, 0)}, "导出/c.md")
+	c.MarkProcessed(channel.SourceFile{Path: "D:/a.jsonl", Size: 1, ModTime: time.Unix(1, 0)}, "导出/a.md")
+	c.MarkProcessed(channel.SourceFile{Path: "D:/b.jsonl", Size: 2, ModTime: time.Unix(2, 0)}, "导出/b.md")
 
 	got := c.Entries()
 	if len(got) != 3 {
@@ -455,8 +447,8 @@ func TestEntriesSortedAndKeepArchivePath(t *testing.T) {
 	if got[0].Path != "D:/a.jsonl" || got[2].Path != "D:/c.jsonl" {
 		t.Errorf("应当按路径排序，实际 %s … %s", got[0].Path, got[2].Path)
 	}
-	if got[0].ArchivePath != "归档/a.md" {
-		t.Errorf("归档路径没留住: %+v", got[0])
+	if got[0].ArchivePath != "导出/a.md" {
+		t.Errorf("导出路径没留住: %+v", got[0])
 	}
 	if got[0].ProcessedAt.IsZero() {
 		t.Error("处理时刻没填")
@@ -468,10 +460,7 @@ func TestFailedFileRetriesThenStopsUntilItChanges(t *testing.T) {
 	root := t.TempDir()
 	sf := makeSourceFiles(t, filepath.Join(root, "sources"), "a.jsonl")[0]
 
-	c, err := Open(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, c := openTestCursor(t)
 
 	if change := c.Check(sf); change != ChangeNew {
 		t.Fatalf("第一次 Check = %v，想要 ChangeNew", change)
@@ -513,38 +502,33 @@ func TestMarkProcessedClearsFailures(t *testing.T) {
 	root := t.TempDir()
 	sf := makeSourceFiles(t, filepath.Join(root, "sources"), "a.jsonl")[0]
 
-	c, err := Open(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, c := openTestCursor(t)
 	c.MarkFailed(sf)
-	c.MarkProcessed(sf, "归档/a.md")
+	c.MarkProcessed(sf, "导出/a.md")
 
 	entry, ok := c.Entry(sf.Path)
 	if !ok {
-		t.Fatal("游标里应当有记录")
+		t.Fatal("水位里应当有记录")
 	}
 	if entry.Failures != 0 {
 		t.Errorf("成功处理之后失败次数应当归零，实际 %d", entry.Failures)
 	}
 }
 
-func TestOpenMissingCursorIsNotAnError(t *testing.T) {
-	c, err := Open(filepath.Join(t.TempDir(), "state"))
-	if err != nil {
-		t.Fatalf("游标不存在不该报错: %v", err)
-	}
+// 主库没账（首次使用）不算错误，是一条空账。
+func TestFreshCursorIsEmptyNotAnError(t *testing.T) {
+	_, c := openTestCursor(t)
 	if !c.Rebuilt() {
-		t.Error("游标不存在应当标为重建")
+		t.Error("没有账应当标为重建")
 	}
 	if c.Len() != 0 {
-		t.Errorf("应当是空游标，实际 %d 条", c.Len())
+		t.Errorf("应当是空账，实际 %d 条", c.Len())
 	}
 }
 
-// 验收标准 3：写入者唯一——除本包外，没有别的包碰这个文件。
+// 验收标准 3：写入者唯一——除本包外，没有别的包碰这个文件名。
 //
-// 写法是扫源码：除 internal/store 之外，任何 .go 文件都不该出现游标文件名。
+// 写法是扫源码：除 internal/store 之外，任何 .go 文件都不该出现旧游标文件名。
 // 谁绕过 store 的接口直接拼路径读写，这条就会红。
 func TestOnlyThisPackageTouchesTheCursorFile(t *testing.T) {
 	root := filepath.Join("..", "..")
@@ -578,5 +562,30 @@ func TestOnlyThisPackageTouchesTheCursorFile(t *testing.T) {
 	}
 	if len(offenders) > 0 {
 		t.Errorf("除 internal/store 外还有地方提到 %s，说明绕过了本包接口: %v", FileName, offenders)
+	}
+}
+
+// I-082 验收标准 2：旧 JSON 不再有写入者——本包生产代码里没有文件写调用。
+func TestLegacyLedgerFilesHaveNoWriters(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	forbidden := []string{"os.WriteFile", "os.OpenFile", "os.Create", "os.Rename"}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(".", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(raw)
+		for _, pattern := range forbidden {
+			if strings.Contains(text, pattern) {
+				t.Errorf("%s 含文件写调用 %q——账本只准写主库（I-082）", name, pattern)
+			}
+		}
 	}
 }

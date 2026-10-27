@@ -23,6 +23,7 @@ import (
 	"github.com/Always1023/AgentMemory/internal/channel/opencode"
 	"github.com/Always1023/AgentMemory/internal/channel/pi"
 	"github.com/Always1023/AgentMemory/internal/channel/qoder"
+	"github.com/Always1023/AgentMemory/internal/channel/webarchive"
 	"github.com/Always1023/AgentMemory/internal/channel/workbuddy"
 	"github.com/Always1023/AgentMemory/internal/channel/zcode"
 )
@@ -48,6 +49,7 @@ func All() []channel.Entry {
 		{ID: pi.ChannelID, Name: pi.Name, Adapter: pi.Adapter{}},
 		{ID: qoder.ChannelID, Name: qoder.Name, Adapter: qoder.Adapter{}},
 		{ID: cherrystudio.ChannelID, Name: cherrystudio.Name, Adapter: cherrystudio.Adapter{}},
+		{ID: webarchive.ChannelID, Name: webarchive.Name, Adapter: &webarchive.Adapter{}},
 	}
 }
 

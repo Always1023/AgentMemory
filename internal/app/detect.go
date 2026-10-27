@@ -45,6 +45,7 @@ func Census(deps Deps, progress func(Progress)) (CensusResult, error) {
 	if err != nil {
 		return out, err
 	}
+	applyArchiveRoot(adapters, deps.ArchiveDir)
 
 	if progress != nil {
 		progress(Progress{Stage: StageDetect})
@@ -55,7 +56,18 @@ func Census(deps Deps, progress func(Progress)) (CensusResult, error) {
 		out.Names[entry.ID] = entry.Name
 	}
 
-	cache := openCensusCache(deps)
+	cdb := openCensusDB(deps)
+	if cdb != nil {
+		defer cdb.Close()
+	}
+	var cache *store.CensusCache
+	if cdb != nil {
+		cache, err = cdb.OpenCensus()
+		if err != nil {
+			// 缓存打不开只影响速度，不影响这次统计结果。
+			cache = nil
+		}
+	}
 	seen := map[string]bool{}
 
 	for i, report := range reports {
@@ -110,11 +122,11 @@ func Census(deps Deps, progress func(Progress)) (CensusResult, error) {
 	return out, nil
 }
 
-// openCensusCache 打开首页统计缓存。
+// openCensusDB 打开统计缓存所在的 主库。
 //
-// 测试里注入了渠道、又没指定 BaseDir 时不开缓存：否则测试会写进真实的
+// 测试里注入了渠道、又没指定 BaseDir 时不开：否则测试会写进真实的
 // 配置目录。生产用内置渠道（Channels 为空），照常走默认目录。
-func openCensusCache(deps Deps) *store.CensusCache {
+func openCensusDB(deps Deps) *store.DB {
 	if deps.BaseDir == "" && deps.Channels != nil {
 		return nil
 	}
@@ -122,11 +134,11 @@ func openCensusCache(deps Deps) *store.CensusCache {
 	if err != nil {
 		return nil
 	}
-	cache, err := store.OpenCensus(dir)
+	db, err := store.OpenDB(dir)
 	if err != nil {
 		return nil
 	}
-	return cache
+	return db
 }
 
 // censusFileState 判定一个源文件是「有效」还是「空」。

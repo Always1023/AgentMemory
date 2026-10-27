@@ -9,7 +9,6 @@ import (
 
 	"github.com/Always1023/AgentMemory/internal/archive"
 	"github.com/Always1023/AgentMemory/internal/config"
-	"github.com/Always1023/AgentMemory/internal/store"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -45,6 +44,11 @@ type UISettings struct {
 	// 时间（"2026-10-22 03:24"）；没有记录时是「还没有记录」，读不到时是
 	// 「读不到运行记录」。手动收集与重试不算（I-073）。
 	ScheduleLastRun string `json:"scheduleLastRun"`
+	// MCPEnabled 是「对外接口」开关（F15）。MCPCommand / MCPArgs 是给客户端抄的两项：
+	// 命令只填 exe 路径，-mcp 放参数里（ccs 这类管理器两个框分开填）。
+	MCPEnabled bool   `json:"mcpEnabled"`
+	MCPCommand string `json:"mcpCommand"`
+	MCPArgs    string `json:"mcpArgs"`
 	// ScheduleNote 是定时那一段的一句说明（读系统失败、或与配置对不上时用它）。
 	ScheduleNote string `json:"scheduleNote"`
 
@@ -68,6 +72,8 @@ type SettingsInput struct {
 	ScheduleEnabled *bool `json:"scheduleEnabled"`
 	// ScheduleDailyAt 为空表示这一项没动。
 	ScheduleDailyAt string `json:"scheduleDailyAt"`
+	// MCPEnabled 为 nil 表示这一项没动；否则按它开关「对外接口」。
+	MCPEnabled *bool `json:"mcpEnabled"`
 }
 
 // Settings 读一遍抽屉要显示的东西。
@@ -95,6 +101,9 @@ func (a *App) Settings() (UISettings, error) {
 		ScheduleEnabled: cfg.Schedule.Enabled,
 		ScheduleDailyAt: cfg.Schedule.DailyAt,
 		ScheduleLastRun: a.scheduleLastRun(),
+		MCPEnabled:      cfg.MCPEnabled,
+		MCPCommand:      mcpExecutable(),
+		MCPArgs:         mcpArgs,
 		ConfigPath:      path,
 	}
 
@@ -149,12 +158,13 @@ const (
 // 只看来源为定时的记录：手动收集与重试回答不了「定时任务有没有在跑」。
 // 没有记录与读不到是两回事，分别给一句不同的话——不能把读失败说成「还没跑过」。
 func (a *App) scheduleLastRun() string {
-	dir, err := config.BaseDir()
+	db, err := openStoreDB()
 	if err != nil {
-		a.logger.Warn("找不到运行记录的位置", "原因", err)
+		a.logger.Warn("读运行记录失败", "原因", err)
 		return scheduleLastRunUnreadable
 	}
-	runs, err := store.ReadRuns(dir, runLogKeepDays, time.Now())
+	defer db.Close()
+	runs, err := db.ReadRuns(runLogKeepDays, time.Now())
 	if err != nil {
 		a.logger.Warn("读运行记录失败", "原因", err)
 		return scheduleLastRunUnreadable
@@ -193,6 +203,9 @@ func (a *App) SaveSettings(input SettingsInput) (UISettings, error) {
 	}
 	if at := strings.TrimSpace(input.ScheduleDailyAt); at != "" {
 		cfg.Schedule.DailyAt = at
+	}
+	if input.MCPEnabled != nil {
+		cfg.MCPEnabled = *input.MCPEnabled
 	}
 
 	// 界面不再问仓库地址（人提的：有「试连」就够了）——选着 Git 仓库、而配置里
@@ -440,4 +453,16 @@ func (a *App) MigrateArchive() (UIMigrate, error) {
 	a.logger.Info("搬归档", "旧目录", oldDir, "新目录", cfg.ArchiveDir,
 		"复制", out.Copied, "跳过", out.Skipped, "撞名", out.Conflicts)
 	return out, nil
+}
+
+// mcpArgs 是启动 MCP 服务的那一个参数。
+const mcpArgs = "-mcp"
+
+// mcpExecutable 给出当前 exe 的完整路径（给外部客户端抄；路径有空格时客户端要自己加引号）。
+func mcpExecutable() string {
+	exe, err := os.Executable()
+	if err != nil || strings.TrimSpace(exe) == "" {
+		return "AgentMemory.exe"
+	}
+	return exe
 }

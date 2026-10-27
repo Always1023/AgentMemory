@@ -1,13 +1,13 @@
-// Package store 维护本机的两份账：渠道源文件的增量游标（index.json），
-// 以及每次收集的运行记录（runs.jsonl，见 runs.go）。
+// Package store 维护本机的账本：L1 事件流（l1.go）、渠道源文件的增量水位
+// （本文件）、首页统计缓存（census.go）与运行记录（runs.go）。
 //
-// 一句话：游标记住「这个文件上次处理时的样子」，下次没变就不再读它；
+// 一句话：水位记住「这个文件上次处理时的样子」，下次没变就不再读它；
 // 运行记录一行一次收集，界面按天读回去。
 //
 // 本机实测 Codex 一个渠道就有 563.9 MB / 256 个文件，没有增量就得每天全量重读。
 //
 // 依赖方向（docs/ARCHITECTURE.md 模块表）：只依赖共享的会话模型类型，
-// 不 import config——文件放在哪个目录由调用方传入。
+// 不 import config——主库放哪由调用方传入。
 package store
 
 import (
@@ -17,7 +17,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,21 +25,19 @@ import (
 	"github.com/Always1023/AgentMemory/internal/channel"
 )
 
-// FileName 是游标文件名。本包是它唯一的写入者（验收标准 3）。
+// FileName 是旧版游标文件名（index.json）。升级后它只被**读一次**用于导入主库，
+// 不再有写入者；常量保留，给「只有本包碰它」的守卫用例用。
 const FileName = "index.json"
 
-// fileVersion 是游标文件的结构版本。
-//
-// 版本对不上就当作空游标重建：游标只是加速用的缓存，重建的代价是重读一遍，
-// 比试着把旧结构猜出来安全。
-const fileVersion = 1
+// legacyFileVersion 是旧游标文件的结构版本。
+const legacyFileVersion = 1
 
 // maxParseFailures 是同一个源文件连续解析失败的次数上限（I-048）。
 //
 // 达到之后不再自动重试，直到文件大小或内容变化；手动「重试」不受此限。
 const maxParseFailures = 3
 
-// Entry 是一条游标记录：某个源文件上次处理时的样子，以及它产出的归档文件。
+// Entry 是一条水位记录：某个源文件上次处理时的样子，以及它产出的导出文件。
 type Entry struct {
 	// Path 是源文件的绝对路径。
 	Path string `json:"path"`
@@ -54,7 +51,7 @@ type Entry struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// Failures 是这个源文件连续解析失败的次数；成功、或文件大小 / 内容变化后归零（I-048）。
 	Failures int `json:"failures,omitempty"`
-	// ArchivePath 是这份源文件产出的归档文件；还没归档时为空。
+	// ArchivePath 是这份源文件产出的导出文件；还没导出时为空。
 	ArchivePath string `json:"archive_path,omitempty"`
 	// ProcessedAt 是上次处理的时刻。
 	ProcessedAt time.Time `json:"processed_at"`
@@ -64,93 +61,94 @@ type Entry struct {
 type Change int
 
 const (
-	// ChangeNone 不用处理：游标里有它，大小、修改时间与内容都没变。
+	// ChangeNone 不用处理：水位里有它，大小、修改时间与内容都没变。
 	ChangeNone Change = iota
-	// ChangeNew 游标里没有这个源文件，从来没有处理过。
+	// ChangeNew 水位里没有这个源文件，从来没有处理过。
 	ChangeNew
 	// ChangeUpdated 源文件变了：大小变了、内容变了，或者认不出内容变没变
 	// （取不到指纹），保守当作变了。
 	ChangeUpdated
-	// ChangeUnknown 旧游标没有内容指纹，大小相同、只有修改时间不同。
-	// 上层要拿现有归档比一次才能下结论（见 app 的待收统计）。
+	// ChangeUnknown 旧账没有内容指纹，大小相同、只有修改时间不同。
+	// 上层要拿现有导出比一次才能下结论（见 app 的待收统计）。
 	ChangeUnknown
 )
 
-// cursorFile 是游标文件的磁盘形态。
+// cursorFile 是旧游标文件的磁盘形态，只用于导入。
 type cursorFile struct {
 	Version int     `json:"version"`
 	Entries []Entry `json:"entries"`
 }
 
-// Cursor 是游标文件的读写句柄。
+// Cursor 是增量水位的读写句柄。账在内存里改，Save 时经 persist 出口
+// 落进主库（生产）或测试桩；旧的 index.json 只在首次导入时读一次。
 type Cursor struct {
-	dir     string
 	entries map[string]Entry
 	rebuilt bool
 	dirty   bool
+	persist func([]Entry) error
+	// force 为真时不说「不用处理」：换代回填完成前，L1 还没有这些文件的内容，
+	// 水位只用来保数字（I-082 验收反馈）。
+	force bool
 }
 
-// Open 打开 dir 下的游标文件。
-//
-// 文件不存在、内容不是 JSON、结构版本对不上——这些都算「需要重建」：
-// 返回一个空游标，`Err()` 仍是 nil，`Rebuilt()` 为 true（由调用方决定要不要记一笔日志）。
-// 游标丢了只是多读一遍，不该让整轮收集失败（验收标准 4）。
-//
-// 返回错误只在真读不动的时候（如权限不足）。
-func Open(dir string) (*Cursor, error) {
-	c := &Cursor{dir: dir, entries: map[string]Entry{}}
-
-	// 游标目录被指到一个普通文件上——这是配置错了，得当场报出来。
-	// 装作空游标的话，坏消息会推迟到 Save 才炸，而那时已经白读了一遍。
-	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
-		return nil, fmt.Errorf("游标目录 %s 不是目录", dir)
+// newCursor 用已知记录构造；测试与导入共用。
+func newCursor(entries map[string]Entry, rebuilt bool, persist func([]Entry) error) *Cursor {
+	if entries == nil {
+		entries = map[string]Entry{}
 	}
+	return &Cursor{entries: entries, rebuilt: rebuilt, persist: persist}
+}
 
-	raw, err := os.ReadFile(c.path())
-	if errors.Is(err, fs.ErrNotExist) {
-		c.rebuilt = true
-		return c, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("读游标 %s: %w", c.path(), err)
-	}
-
-	var f cursorFile
-	if err := json.Unmarshal(raw, &f); err != nil || f.Version != fileVersion {
-		c.rebuilt = true
-		return c, nil
-	}
-
-	for _, e := range f.Entries {
+// NewCursor 用给定记录构造水位句柄（测试与迁移工具用）；persist 决定 Save 落到哪。
+func NewCursor(entries []Entry, persist func([]Entry) error) *Cursor {
+	m := map[string]Entry{}
+	for _, e := range entries {
 		if e.Path == "" {
 			continue
 		}
-		c.entries[e.Path] = e
+		m[e.Path] = e
 	}
+	return newCursor(m, false, persist)
+}
+
+// OpenCursor 从主库打开水位。旧 index.json 的只读导入集中在 OpenDB 的
+// importLedgers 里做，这里只管从主库装账。
+func (d *DB) OpenCursor() (*Cursor, error) {
+	entries, err := d.loadWatermark()
+	if err != nil {
+		return nil, err
+	}
+	c := newCursor(entries, len(entries) == 0, d.flushWatermark)
+	// 换代回填：库里的水位是旧 JSON 搬来的，L1 却还是空的，这一轮全读一遍。
+	c.force = !d.L1Backfilled()
 	return c, nil
 }
 
-// path 返回游标文件的完整路径。
-func (c *Cursor) path() string { return filepath.Join(c.dir, FileName) }
+// Forced 报告这次打开是否在「换代回填」——不看水位，全部文件都会重读。
+func (c *Cursor) Forced() bool { return c.force }
 
-// Rebuilt 报告这次打开是否是从头重建的（文件不在或内容坏了）。
+// Rebuilt 报告这次打开是否是空的（主库没账、旧文件也没有或读不出）。
 func (c *Cursor) Rebuilt() bool { return c.rebuilt }
 
-// Len 返回游标里的记录条数。
+// Len 返回水位里的记录条数。
 func (c *Cursor) Len() int { return len(c.entries) }
 
 // Check 判断一个源文件要不要处理。
 //
 // 大小和修改时间都没变 → 不用处理。大小变了 → 要处理。大小相同、只有修改时间
-// 变了时先比内容指纹：一致就只刷新游标里的修改时间并返回 ChangeNone（这时
+// 变了时先比内容指纹：一致就只刷新水位里的修改时间并返回 ChangeNone（这时
 // Dirty 为真，调用方要负责 Save）；不一致返回 ChangeUpdated。
 //
-// 旧游标没有指纹时返回 ChangeUnknown，由调用方拿现有归档比一次；取不到指纹
+// 旧账没有指纹时返回 ChangeUnknown，由调用方拿现有导出比一次；取不到指纹
 // （虚拟路径、文件已删）也按「变了」保守处理。
 func (c *Cursor) Check(sf channel.SourceFile) Change {
 	prev, seen := c.entries[sf.Path]
 	if !seen {
 		return ChangeNew
+	}
+	// 换代回填：见识过的文件也要再读一遍（L1 里还没有它的内容）。
+	if c.force {
+		return ChangeUpdated
 	}
 	if prev.Size == sf.Size && prev.ModTime.Equal(sf.ModTime) {
 		// 上一轮解析失败、还没到上限：下一轮再试一次（I-048）。
@@ -181,12 +179,12 @@ func (c *Cursor) Check(sf channel.SourceFile) Change {
 
 // NeedsProcessing 是 Check 的布尔版：只要不是「明确不用处理」都算要处理。
 //
-// ChangeUnknown 也算要处理——旧游标缺指纹时，不能因为比不了就当作没变。
+// ChangeUnknown 也算要处理——旧账缺指纹时，不能因为比不了就当作没变。
 func (c *Cursor) NeedsProcessing(sf channel.SourceFile) bool {
 	return c.Check(sf) != ChangeNone
 }
 
-// MarkProcessed 记下这个源文件这一轮已被处理，以及它产出的归档文件。
+// MarkProcessed 记下这个源文件这一轮已被处理，以及它产出的导出文件。
 //
 // 同时记下内容指纹；虚拟路径取不到文件内容时指纹留空，下次退回大小 + 修改时间判断。
 func (c *Cursor) MarkProcessed(sf channel.SourceFile, archivePath string) {
@@ -205,7 +203,7 @@ func (c *Cursor) MarkProcessed(sf channel.SourceFile, archivePath string) {
 // MarkFailed 记下这个源文件这一轮解析失败，连续失败次数加一。
 //
 // 失败次数达到上限后 Check 不再返回待处理；文件大小或内容变化会把它归零。
-// 归档路径保持原样：之前产出过的归档仍然有效。
+// 导出路径保持原样：之前产出过的导出仍然有效。
 func (c *Cursor) MarkFailed(sf channel.SourceFile) {
 	prev := c.entries[sf.Path]
 	fp, _ := fingerprint(sf.Path)
@@ -234,8 +232,8 @@ func (c *Cursor) resetFailures(path string) {
 
 // Adopt 认定这个源文件的内容与上次处理时相同，只刷新大小、修改时间与指纹。
 //
-// 给旧游标的迁移用：上层重新解析、与现有归档逐字节比过，确认没有变化。
-// 归档路径与处理时刻不动——这次没有重新处理。
+// 给旧账的迁移用：上层重新解析、与现有导出逐字节比过，确认没有变化。
+// 导出路径与处理时刻不动——这次没有重新处理。
 func (c *Cursor) Adopt(sf channel.SourceFile) {
 	fp, err := fingerprint(sf.Path)
 	if err != nil {
@@ -245,7 +243,7 @@ func (c *Cursor) Adopt(sf channel.SourceFile) {
 	c.adopt(sf, fp)
 }
 
-// adopt 刷新一条记录的元数据，保留归档路径与处理时刻。
+// adopt 刷新一条记录的元数据，保留导出路径与处理时刻。
 func (c *Cursor) adopt(sf channel.SourceFile, fp string) {
 	prev := c.entries[sf.Path]
 	prev.Path = sf.Path
@@ -256,7 +254,7 @@ func (c *Cursor) adopt(sf channel.SourceFile, fp string) {
 	c.dirty = true
 }
 
-// Entry 返回某个源文件的游标记录。
+// Entry 返回某个源文件的水位记录。
 func (c *Cursor) Entry(path string) (Entry, bool) {
 	e, ok := c.entries[path]
 	return e, ok
@@ -292,29 +290,42 @@ func (c *Cursor) Entries() []Entry {
 	return out
 }
 
-// Save 把游标落盘。
-//
-// 先写同目录的临时文件再改名替换：中途崩了也只会留下一个临时文件，
-// 不会让游标本身变成半截 JSON。
+// Save 把水位经 persist 出口落盘（生产是主库 watermark 表，整表替换）。
 func (c *Cursor) Save() error {
-	raw, err := json.MarshalIndent(cursorFile{Version: fileVersion, Entries: c.Entries()}, "", "  ")
-	if err != nil {
-		return fmt.Errorf("序列化游标: %w", err)
+	if c.persist == nil {
+		return nil
 	}
-	raw = append(raw, '\n')
-
-	if err := os.MkdirAll(c.dir, 0o755); err != nil {
-		return fmt.Errorf("建游标目录 %s: %w", c.dir, err)
-	}
-
-	tmp := c.path() + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return fmt.Errorf("写游标临时文件 %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, c.path()); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("替换游标文件 %s: %w", c.path(), err)
+	if err := c.persist(c.Entries()); err != nil {
+		return err
 	}
 	c.dirty = false
 	return nil
+}
+
+// readLegacyCursor 读旧 index.json。文件不在返回 ok = false；
+// 读坏了、版本对不上都返回空账（ok = true，entries 为空）——
+// 导入只是加速，坏了重收一遍就是，不让整轮失败。
+func readLegacyCursor(dir string) (entries map[string]Entry, ok bool, err error) {
+	if info, statErr := os.Stat(dir); statErr == nil && !info.IsDir() {
+		return nil, false, fmt.Errorf("数据目录 %s 不是目录", dir)
+	}
+	raw, readErr := os.ReadFile(filepath.Join(dir, FileName))
+	if readErr != nil {
+		if errors.Is(readErr, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("读旧游标 %s: %w", dir, readErr)
+	}
+	entries = map[string]Entry{}
+	var f cursorFile
+	if json.Unmarshal(raw, &f) != nil || f.Version != legacyFileVersion {
+		return entries, true, nil
+	}
+	for _, e := range f.Entries {
+		if e.Path == "" {
+			continue
+		}
+		entries[e.Path] = e
+	}
+	return entries, true, nil
 }

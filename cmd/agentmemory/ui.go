@@ -457,14 +457,16 @@ func headlineFor(cfg config.Config, run *UIRun) string {
 // 一行 = 检测结果 + 最近一轮这个渠道跑出来的数字。两层信息合成一句话，
 // 文案只在 runStateText 里（I-015 验收标准 5）。
 func (a *App) channelStates(cfg config.Config, progress func(app.Progress)) ([]UIChannel, error) {
-	census, err := app.Census(a.deps, progress)
+	deps := a.deps
+	deps.ArchiveDir = cfg.ArchiveDir
+	census, err := app.Census(deps, progress)
 	if err != nil {
 		return nil, err
 	}
 	reports := census.Reports
 
 	// 待收一次数完所有渠道：打开一份游标就够了，旧游标补指纹也只会发生一次。
-	pending, err := app.PendingByChannel(a.deps, reports)
+	pending, err := app.PendingByChannel(deps, reports)
 	if err != nil {
 		return nil, err
 	}
@@ -723,12 +725,13 @@ const (
 //
 // 每次打开这一页现读一遍：记录是别人（定时任务）写进去的，缓存一份反而会显示旧账。
 func (a *App) RunLog() ([]UIDailyRun, error) {
-	dir, err := config.BaseDir()
+	db, err := openStoreDB()
 	if err != nil {
 		return nil, err
 	}
+	defer db.Close()
 	now := time.Now()
-	runs, err := store.ReadRuns(dir, runLogKeepDays, now)
+	runs, err := db.ReadRuns(runLogKeepDays, now)
 	if err != nil {
 		return nil, err
 	}
@@ -740,13 +743,14 @@ func (a *App) RunLog() ([]UIDailyRun, error) {
 // 只读。没有记录、读不动都返回 nil，让界面退回「本次启动还没收过」那条；
 // 历史行没有存用时与错误原文，所以只还原时间与份数。
 func (a *App) lastRunFromLog() *UIRun {
-	dir, err := config.BaseDir()
+	db, err := openStoreDB()
 	if err != nil {
-		a.logger.Warn("找不到运行记录的位置", "原因", err)
+		a.logger.Warn("读运行记录失败", "原因", err)
 		return nil
 	}
+	defer db.Close()
 	now := time.Now()
-	runs, err := store.ReadRuns(dir, runLogKeepDays, now)
+	runs, err := db.ReadRuns(runLogKeepDays, now)
 	if err != nil {
 		a.logger.Warn("读运行记录失败", "原因", err)
 		return nil
@@ -833,11 +837,12 @@ func dayLabel(day string) string {
 // 记录是给人看的账，不该因为它没写成而让收集本身失败（验收标准 4）。
 // 命令行那一路（定时任务）与界面共用这一份。
 func recordRun(logger *slog.Logger, run UIRun, source string) {
-	dir, err := config.BaseDir()
+	db, err := openStoreDB()
 	if err != nil {
 		logger.Warn("运行记录没能写成", "原因", err)
 		return
 	}
+	defer db.Close()
 	// 备份那一步的话也记上：定时那一路到底有没有把改动推上去，就看它（I-030）。
 	// 失败时记可读原因，不记空串——首页不再显示备份，日志页要能说清（I-053）。
 	// 「仅本地」不是一次备份：不记次数、不写说明，日志页才不会说「备份成功」。
@@ -861,7 +866,7 @@ func recordRun(logger *slog.Logger, run UIRun, source string) {
 		Backup:       backup,
 		BackupFailed: run.BackupErr != "",
 	}
-	if err := store.AppendRun(dir, rec, runLogKeepDays, time.Now()); err != nil {
+	if err := db.AppendRun(rec, runLogKeepDays, time.Now()); err != nil {
 		logger.Warn("运行记录没能写成", "原因", err)
 	}
 }

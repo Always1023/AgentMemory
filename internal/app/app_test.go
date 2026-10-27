@@ -247,8 +247,8 @@ func TestSystemErrorStopsTheRun(t *testing.T) {
 		logger, _ := testLogger()
 		_, err := Collect(testConfig(filepath.Join(root, "归档")), logger,
 			testDeps(t, notADir, backup.Result{}))
-		if err == nil || !strings.Contains(err.Error(), "增量游标") {
-			t.Fatalf("游标开不了应当报错: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "主库") {
+			t.Fatalf("主库开不了应当报错: %v", err)
 		}
 	})
 }

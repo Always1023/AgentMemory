@@ -29,6 +29,7 @@ import (
 	"github.com/Always1023/AgentMemory/internal/channel"
 	"github.com/Always1023/AgentMemory/internal/channels"
 	"github.com/Always1023/AgentMemory/internal/config"
+	"github.com/Always1023/AgentMemory/internal/derive"
 	"github.com/Always1023/AgentMemory/internal/render"
 	"github.com/Always1023/AgentMemory/internal/store"
 )
@@ -154,6 +155,9 @@ type Deps struct {
 	Backups *backup.Registry
 	// BaseDir 是配置与增量游标所在的目录；留空用 config.BaseDir()。
 	BaseDir string
+	// ArchiveDir 是归档目录：导入型渠道（channel.ArchiveRootSetter）的数据根
+	// 在这里头。Collect 从配置填；Census 这类只读路径由调用方带上。
+	ArchiveDir string
 	// Only 非空时只处理这些渠道（界面上的「重试某个渠道」走这条）；留空就是全部。
 	Only []string
 	// Force 为真时不管游标怎么说，都把 Only 那些渠道的文件重跑一遍。
@@ -189,18 +193,27 @@ func Collect(cfg config.Config, logger *slog.Logger, deps Deps) (Result, error) 
 	if err != nil {
 		return result, err
 	}
-	cursor, err := store.Open(baseDir)
+	db, err := store.OpenDB(baseDir)
 	if err != nil {
-		return result, fmt.Errorf("打开增量游标：%w", err)
+		return result, err
+	}
+	defer db.Close()
+	cursor, err := db.OpenCursor()
+	if err != nil {
+		return result, fmt.Errorf("打开增量水位：%w", err)
 	}
 	if cursor.Rebuilt() {
-		logger.Info("增量游标不存在或已损坏，已重建；本轮会重读一遍已有的会话文件")
+		logger.Info("水位账是空的；本轮会重读一遍已有的会话文件")
+	}
+	if cursor.Forced() {
+		logger.Info("换代回填：水位是旧版搬来的，这一轮不看它，全部源文件重读入库")
 	}
 
 	registry, adapters, err := resolveChannels(deps)
 	if err != nil {
 		return result, err
 	}
+	applyArchiveRoot(adapters, cfg.ArchiveDir)
 
 	deps.report(Progress{Stage: StageDetect})
 	// 只收指定的渠道（界面上的「重试」走这条）；留空就是全部。
@@ -221,7 +234,7 @@ func Collect(cfg config.Config, logger *slog.Logger, deps Deps) (Result, error) 
 			})
 		}
 		notify(0, false)
-		cr, err := collectOne(cfg, logger, cursor, report, adapters[report.ID], deps.Force, notify)
+		cr, err := collectOne(cfg, logger, db, cursor, report, adapters[report.ID], deps.Force, notify)
 		result.Channels = append(result.Channels, cr)
 		if err != nil {
 			// 系统错：中断整轮，把可读的错误交出去。
@@ -230,7 +243,25 @@ func Collect(cfg config.Config, logger *slog.Logger, deps Deps) (Result, error) 
 	}
 
 	if err := cursor.Save(); err != nil {
-		return result, fmt.Errorf("保存增量游标：%w", err)
+		return result, fmt.Errorf("保存增量水位：%w", err)
+	}
+
+	// 换代回填到此为止：这一轮源文件都进过 L1 了，之后照常按水位增量走。
+	// 标记写不成不挡收集——下一轮无非再全读一遍。
+	if cursor.Forced() {
+		if err := db.MarkL1Backfilled(); err != nil {
+			logger.Warn("换代回填标记没写成，下一轮还会全读一遍", "原因", err)
+		} else {
+			logger.Info("换代回填完成：L1 已按源文件填齐")
+		}
+	}
+
+	// 维度派生（L2a）：每轮收集后重建一遍。失败不挡收集——维度是派生视图，
+	// 随时可从 L1 重来（AC-15）；账没重建成功只影响查询的新鲜度。
+	if dimRegistry, derr := derive.Default(); derr == nil {
+		if derr := derive.Rebuild(db, dimRegistry); derr != nil {
+			logger.Warn("维度重建失败，下轮收集会再试", "原因", derr)
+		}
 	}
 
 	deps.report(Progress{Stage: StageBackup})
@@ -251,7 +282,7 @@ func Collect(cfg config.Config, logger *slog.Logger, deps Deps) (Result, error) 
 // 返回的错误只在**系统错**时非空（归档写不进去），那时整轮要中断。
 //
 // force 为真时不看游标，这批文件全跑一遍（界面上的「重试」）。
-func collectOne(cfg config.Config, logger *slog.Logger, cursor *store.Cursor, report channel.Report, adapter channel.Adapter, force bool, notify func(done int, finished bool)) (ChannelResult, error) {
+func collectOne(cfg config.Config, logger *slog.Logger, db *store.DB, cursor *store.Cursor, report channel.Report, adapter channel.Adapter, force bool, notify func(done int, finished bool)) (ChannelResult, error) {
 	cr := ChannelResult{
 		ID:      report.ID,
 		Name:    report.Name,
@@ -300,8 +331,17 @@ func collectOne(cfg config.Config, logger *slog.Logger, cursor *store.Cursor, re
 			continue
 		}
 
+		// 防御性补齐：个别适配器没填渠道 ID（会话归属以注册表为准）；
+		// 会话标识缺失时退回源文件路径——入库的身份键必须有值。
+		if session.Channel == "" {
+			session.Channel = report.ID
+		}
+		if session.ID == "" {
+			session.ID = sf.Path
+		}
+
 		if session.MessageCount() == 0 {
-			// 空会话（打开过没说话）：不算失败、不归档。也要记进游标，
+			// 空会话（打开过没说话）：不算失败、不入库、不导出。也要记进水位，
 			// 否则每一轮都把它当「没见过的文件」重来一遍（I-039）。
 			cr.Empty++
 			cursor.MarkProcessed(sf, "")
@@ -309,13 +349,23 @@ func collectOne(cfg config.Config, logger *slog.Logger, cursor *store.Cursor, re
 			continue
 		}
 
+		// 先入 L1（唯一真源），再导出 Markdown（L2 派生）。导出用的是同一个
+		// 内存会话模型；「经库回组后渲染一字不差」由等价用例钉住（I-085）。
+		if err := db.WriteSession(session, time.Now()); err != nil {
+			// 系统错：主库写不进去。停下，别装作继续。
+			cr.Failed++
+			cr.Failures = append(cr.Failures, Failure{Path: sf.Path, Err: err})
+			logger.Error("入库失败，整轮中断", "渠道", report.ID, "文件", sf.Path, "原因", err)
+			return cr, fmt.Errorf("入库 %s：%w", sf.Path, err)
+		}
+
 		path, err := archive.Write(cfg.ArchiveDir, session, report.Name, render.Render(session, report.Name))
 		if err != nil {
 			// 系统错：磁盘满了、没权限之类。停下，别装作继续。
 			cr.Failed++
 			cr.Failures = append(cr.Failures, Failure{Path: sf.Path, Err: err})
-			logger.Error("归档失败，整轮中断", "渠道", report.ID, "文件", sf.Path, "原因", err)
-			return cr, fmt.Errorf("归档 %s：%w", sf.Path, err)
+			logger.Error("导出失败，整轮中断", "渠道", report.ID, "文件", sf.Path, "原因", err)
+			return cr, fmt.Errorf("导出 %s：%w", sf.Path, err)
 		}
 
 		cursor.MarkProcessed(sf, path)
@@ -370,6 +420,19 @@ func runBackup(cfg config.Config, logger *slog.Logger, deps Deps) BackupResult {
 		logger.Info("备份完成", "方式", method, "说明", out.Detail)
 	}
 	return out
+}
+
+// applyArchiveRoot 把归档目录告诉导入型渠道（channel.ArchiveRootSetter）；
+// 没有这类渠道时什么也不做。
+func applyArchiveRoot(adapters map[string]channel.Adapter, archiveDir string) {
+	if strings.TrimSpace(archiveDir) == "" {
+		return
+	}
+	for _, adapter := range adapters {
+		if setter, ok := adapter.(channel.ArchiveRootSetter); ok {
+			setter.SetArchiveRoot(archiveDir)
+		}
+	}
 }
 
 // resolveBaseDir 定出游标放哪儿。

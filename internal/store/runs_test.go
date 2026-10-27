@@ -1,45 +1,55 @@
 package store
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
 
+// marshalRunLine 把一条运行记录写成旧版 jsonl 的一行（只给导入测试用）。
+func marshalRunLine(r Run) string {
+	b, err := json.Marshal(r)
+	if err != nil {
+		panic(err)
+	}
+	return string(b) + "\n"
+}
+
+// openTestRuns 开一个临时主库给运行记录用。
+func openTestRuns(t *testing.T) *DB {
+	return openTestDB(t)
+}
+
 // 加一行就多一行，已有行一个字都不动（I-030 验收标准 4）。
 func TestAppendRunOnlyAdds(t *testing.T) {
-	dir := t.TempDir()
+	db := openTestRuns(t)
 	now := time.Date(2026, 10, 16, 9, 0, 0, 0, time.Local)
 
 	first := Run{At: now, Source: "手动", Archived: 2}
-	if err := AppendRun(dir, first, 90, now); err != nil {
+	if err := db.AppendRun(first, 90, now); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(RunsPath(dir))
+	afterFirst, err := db.ReadRuns(90, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	second := Run{At: now.Add(time.Hour), Source: "定时", Archived: 5}
-	if err := AppendRun(dir, second, 90, now.Add(time.Hour)); err != nil {
+	if err := db.AppendRun(second, 90, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	after, err := os.ReadFile(RunsPath(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(string(after), string(raw)) {
-		t.Errorf("已有那行被改过了：\n%s\n=>\n%s", raw, after)
-	}
-
-	runs, err := ReadRuns(dir, 90, now)
+	runs, err := db.ReadRuns(90, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(runs) != 2 {
 		t.Fatalf("应当读回 2 行，实际 %d", len(runs))
+	}
+	// 已有那行一个字都没动。
+	if runs[0].Source != afterFirst[0].Source || runs[0].Archived != afterFirst[0].Archived {
+		t.Errorf("已有那行被改过了：%+v => %+v", afterFirst[0], runs[0])
 	}
 	if runs[0].Source != "手动" || runs[1].Source != "定时" {
 		t.Errorf("顺序该是从早到晚，实际 %+v", runs)
@@ -49,43 +59,31 @@ func TestAppendRunOnlyAdds(t *testing.T) {
 	}
 }
 
-// 超过 90 天的行自动清掉，坏行跳过（验收标准 5）。
-func TestRunsDropOldRowsAndBadLines(t *testing.T) {
+// 旧 runs.jsonl 导入：坏行跳过；导入后再按口径清旧账（验收标准 5）。
+func TestLegacyRunsImportSkipsBadLinesAndPrunes(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 10, 16, 9, 0, 0, 0, time.Local)
 
 	old := Run{At: now.AddDate(0, 0, -100), Source: "定时", Archived: 9}
 	fresh := Run{At: now, Source: "手动", Archived: 1}
-	if err := AppendRun(dir, old, 90, old.At); err != nil {
-		t.Fatal(err)
-	}
-	// 手动塞一行坏的进去：坏行不该让整页打不开。
-	f, err := os.OpenFile(RunsPath(dir), os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("{这不是一行记录\n"); err != nil {
-		t.Fatal(err)
-	}
-	_ = f.Close()
-	if err := AppendRun(dir, fresh, 90, now); err != nil {
+	body := marshalRunLine(old) + "{这不是一行记录\n" + marshalRunLine(fresh)
+	if err := os.WriteFile(filepath.Join(dir, RunsFileName), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	runs, err := ReadRuns(dir, 90, now)
+	db, err := OpenDB(dir)
+	if err != nil {
+		t.Fatalf("打开主库: %v", err)
+	}
+	defer db.Close()
+
+	// 导入后只有 fresh 一行能活下来：old 超过 90 天，坏行被跳过。
+	runs, err := db.ReadRuns(90, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(runs) != 1 || runs[0].Archived != 1 {
 		t.Fatalf("只该剩下今天那行，实际 %+v", runs)
-	}
-
-	raw, err := os.ReadFile(RunsPath(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Count(string(raw), "\n") != 1 {
-		t.Errorf("文件里只该剩一行（老的 + 坏的都清掉），实际：\n%s", raw)
 	}
 }
 
@@ -140,15 +138,5 @@ func TestDailyRunsKeepsTheFailureNote(t *testing.T) {
 	}
 	if daily[0].BackupNote != "推不上去" || !daily[0].BackupNoteFailed {
 		t.Errorf("失败原因要留着，实际 %+v", daily[0])
-	}
-}
-
-// 落盘的目录给不出来时，如实报错而不是静默丢账。
-func TestAppendRunRefusesAnEmptyDir(t *testing.T) {
-	if err := AppendRun("  ", Run{}, 90, time.Now()); err == nil {
-		t.Error("没有目录时该报错")
-	}
-	if err := AppendRun(filepath.Join(t.TempDir(), "没有的目录", "再一层"), Run{}, 90, time.Now()); err != nil {
-		t.Errorf("目录不存在该自己建出来，实际 %v", err)
 	}
 }

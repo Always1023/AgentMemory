@@ -186,6 +186,14 @@ func (a *slowAdapter) Detect() channel.DetectResult {
 	return channel.DetectResult{Status: channel.StatusAvailable, Root: "/根", Files: a.files}
 }
 
+// Probe 是统计那一路的轻量探测（I-056）：快进快出。
+// 没有它，State() 的统计与收集用同一个慢 Parse，两边耗时一样，
+// 「收集中再点」的窗口就压线了——真实适配器正是靠 Probe 把统计变快的。
+func (a *slowAdapter) Probe(sf channel.SourceFile) (bool, error) {
+	time.Sleep(5 * time.Millisecond)
+	return true, nil
+}
+
 func (a *slowAdapter) Parse(sf channel.SourceFile) (channel.Session, error) {
 	select {
 	case a.started <- struct{}{}:

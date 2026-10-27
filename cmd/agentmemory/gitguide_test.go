@@ -176,14 +176,14 @@ func TestGitGuideDetectsTheConfiguredRemote(t *testing.T) {
 
 	fake := newFakeGit()
 	fake.repoReady = true
-	fake.remote = "git@github.com:example/Memory.git"
+	fake.remote = "git@github.com:Always1023/Memory.git"
 	ui := gitApp(t, fake)
 
 	guide, err := ui.GitGuide()
 	if err != nil {
 		t.Fatalf("GitGuide: %v", err)
 	}
-	if guide.DetectedRemote != "git@github.com:example/Memory.git" {
+	if guide.DetectedRemote != "git@github.com:Always1023/Memory.git" {
 		t.Errorf("应当把本地仓库配好的远程读出来，实际 %q", guide.DetectedRemote)
 	}
 	// 配置里没填地址、而仓库里有：停在「试连」这一步，等界面把地址填上。
@@ -423,7 +423,7 @@ func TestSaveSettingsTakesTheDetectedRemote(t *testing.T) {
 
 	fake := newFakeGit()
 	fake.repoReady = true
-	fake.remote = "git@github.com:example/Memory.git"
+	fake.remote = "git@github.com:Always1023/Memory.git"
 	ui := gitApp(t, fake)
 
 	cfg, err := config.Load()

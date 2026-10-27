@@ -64,12 +64,15 @@ function show(id) {
   $("view-wizard").hidden = id !== "view-wizard";
   $("view-main").hidden = id !== "view-main";
   $("view-log").hidden = id !== "view-log";
+  $("view-search").hidden = id !== "view-search";
   $("view-settings").hidden = id !== "view-settings";
 
-  // 导航栏跟着视图走：首页、日志、设置三页；引导期间藏起来。
-  $("nav").hidden = id !== "view-main" && id !== "view-log" && id !== "view-settings";
+  // 导航栏跟着视图走：首页、日志、搜索、设置四页；引导期间藏起来。
+  const inApp = id === "view-main" || id === "view-log" || id === "view-search" || id === "view-settings";
+  $("nav").hidden = !inApp;
   $("nav-main").classList.toggle("nav__item--on", id === "view-main");
   $("nav-log").classList.toggle("nav__item--on", id === "view-log");
+  $("nav-search").classList.toggle("nav__item--on", id === "view-search");
   $("nav-settings").classList.toggle("nav__item--on", id === "view-settings");
 }
 
@@ -916,6 +919,17 @@ function renderSettings() {
 
   form.scheduleDetail = el("p", "hint");
 
+  // 对外接口（F15 / I-091）：默认关；打开后外部 Agent 才拉得起 MCP 服务。
+  const mcpOn = document.createElement("input");
+  mcpOn.type = "checkbox";
+  mcpOn.id = "set-mcp-on";
+  mcpOn.checked = !!settings.mcpEnabled;
+  mcpOn.addEventListener("change", () => saveSettings({ mcpEnabled: mcpOn.checked }));
+  form.mcpOn = mcpOn;
+  const mcpLabel = el("label", "choice");
+  mcpLabel.append(mcpOn, el("span", "", "允许外部 Agent 通过 MCP 读取这个库（只读）"));
+  form.mcpHint = el("p", "hint");
+
   // 选中哪一种备份方式，就跟哪一句话（话由后端给，见 ui.go 的 backupModeHints）。
   form.modeHint = el("p", "hint");
 
@@ -948,6 +962,12 @@ function renderSettings() {
       hint("开着的时候由系统的计划任务在每天这个点跑一次：先增量收集写到归档目录，再按上面的备份方式备份（选 Git 就自动 add / commit / push）。程序本身不常驻。"),
       inputRow(onLabel, scheduleAt),
       form.scheduleDetail
+    ),
+    group(
+      "对外接口",
+      hint("打开后，dsh / Claude Code 这类外部 Agent 可以用 MCP 只读地查这个库：检索、读会话、读维度、导出切片、统计。它不能写库，也不能触发收集。配置时命令填 exe 路径、参数填 -mcp，两个框分开（ccs 里最容易把 -mcp 一起填进命令框）。"),
+      inputRow(mcpLabel),
+      form.mcpHint
     ),
     group("配置文件", hint(settings.configPath || "")),
     group(
@@ -997,6 +1017,11 @@ function refreshSettings() {
     form.scheduleAt.value = settings.scheduleDailyAt || "09:00";
   }
   form.scheduleDetail.textContent = scheduleLine(settings);
+  form.mcpOn.checked = !!settings.mcpEnabled;
+  form.mcpHint.textContent = settings.mcpEnabled
+    ? "命令：" + (settings.mcpCommand || "") + " ｜ 参数：" + (settings.mcpArgs || "-mcp")
+    : "";
+  form.mcpHint.hidden = !settings.mcpEnabled;
   renderSettingsFoot();
 
   // 选了 Git 仓库才挂上那一块；别的模式不打扰 git 与网络。
@@ -1566,6 +1591,131 @@ function channelMark(row) {
   return go;
 }
 
+// ── 搜索页（I-084 / F13）──────────────────────────────────────────────
+//
+// 关键词全文检索：后端查 FTS5 索引，这里只摆输入框、结果行与三态提示
+//（没输入 / 没命中 / 失败）。进来才聚焦，搜完就地出结果。
+
+async function openSearch() {
+  if (!$("view-settings").hidden && !leaveSettings()) {
+    pendingView = "search";
+    return;
+  }
+  pendingView = "";
+  show("view-search");
+  reportView("search");
+  $("search-input").focus();
+  await fillSearchOptions();
+}
+
+// fillSearchOptions 用维度表里的渠道与项目填过滤下拉；填不上不挡搜索。
+async function fillSearchOptions() {
+  try {
+    const opts = await window.go.main.App.SearchOptions();
+    const channelSelect = $("search-channel");
+    // 「全部渠道」必须带空 value：不写的话浏览器拿显示文字当值，
+    // 后端按渠道精确过滤就查不到任何东西（I-084 验收反馈）。
+    const allChannels = el("option", "", "全部渠道");
+    allChannels.value = "";
+    channelSelect.replaceChildren(allChannels);
+    for (const one of opts.channels || []) {
+      const node = document.createElement("option");
+      node.value = one.value;
+      node.textContent = one.label;
+      channelSelect.append(node);
+    }
+    const projectList = $("search-project-options");
+    projectList.replaceChildren();
+    for (const project of opts.projects || []) {
+      const node = document.createElement("option");
+      node.value = project;
+      projectList.append(node);
+    }
+  } catch (err) {
+    $("search-note").textContent = "过滤下拉没加载出来，仍可按关键词搜索。";
+    $("search-note").hidden = false;
+  }
+}
+
+let lastSearchQuery = "";
+// searchTimer 是「边打边搜」的计时器：回车 / 点按钮 / 改过滤条件都立刻查，
+// 打字停手 500 毫秒才查一次。
+let searchTimer = 0;
+
+async function runSearch() {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+    searchTimer = 0;
+  }
+  const query = $("search-input").value.trim();
+  lastSearchQuery = query;
+  const list = $("search-rows");
+  const note = $("search-note");
+  list.replaceChildren();
+  if (!query) {
+    note.textContent = "输入一个关键词再搜。";
+    note.hidden = false;
+    return;
+  }
+  const go = $("search-go");
+  go.disabled = true;
+  note.textContent = "正在搜…";
+  note.hidden = false;
+  try {
+    const channelID = $("search-channel").value;
+    const days = Number($("search-days").value) || 0;
+    const project = $("search-project").value.trim();
+    const hits = await window.go.main.App.SearchMemory(query, channelID, project, days);
+    note.textContent = hits.length
+      ? `命中 ${hits.length} 条`
+      : "没有命中的内容，换个词试试。";
+    note.hidden = false;
+    list.replaceChildren(...(hits || []).map(searchRow));
+  } catch (err) {
+    note.textContent = "搜索没做成：" + err + " 可以再试一次。";
+    note.hidden = false;
+  } finally {
+    go.disabled = false;
+  }
+}
+
+// exportSlice 把当前检索词的命中导出成 NDJSON（F14）：落点由后端定，
+// 界面只把条数与路径原样说给人听。
+async function exportSlice() {
+  const note = $("search-note");
+  if (!lastSearchQuery) {
+    note.textContent = "先搜一次再导出。";
+    note.hidden = false;
+    return;
+  }
+  const btn = $("search-export");
+  btn.disabled = true;
+  try {
+    const out = await window.go.main.App.ExportSearchNDJSON(lastSearchQuery);
+    note.textContent = `已导出 ${out.count} 条切片 → ${out.path}`;
+    note.hidden = false;
+  } catch (err) {
+    note.textContent = "导出没做成：" + err + " 可以再试一次。";
+    note.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// searchRow 造一条命中：第一行渠道 · 会话标题 · 种类/时间，下面是两行片段。
+// 标题和片段分行、长标题省略号收口，行高才不会一大一小（I-084 验收反馈）。
+function searchRow(h) {
+  const item = el("li", "search-hit");
+  const head = el("div", "search-hit__head");
+  head.append(
+    el("span", "search-hit__channel", h.channel),
+    el("span", "search-hit__title", h.session),
+    el("span", "search-hit__when", [h.kind, h.when].filter(Boolean).join(" · "))
+  );
+  item.append(head, el("p", "search-hit__snippet", h.snippet));
+  return item;
+}
+
 // ── 日志页（I-030）──────────────────────────────────────────────────────
 //
 // 进来的时候才去读：这一页是定时任务写的账，平时没人看（按需加载）。
@@ -1759,6 +1909,33 @@ async function boot() {
   $("nav-main").addEventListener("click", closeSettings);
   $("nav-log").addEventListener("click", openLog);
   $("nav-settings").addEventListener("click", openSettings);
+  $("nav-search").addEventListener("click", openSearch);
+  $("search-go").addEventListener("click", runSearch);
+  $("search-export").addEventListener("click", exportSlice);
+  $("search-input").addEventListener("keydown", (event) => {
+    // 中文输入法里回车是「上屏」，不是「搜索」：不挡的话第一次回车会把拼音
+    // 当关键词搜掉，人看到的是「没有命中的内容」（I-084 验收反馈）。
+    if (event.key === "Enter" && !event.isComposing) {
+      runSearch();
+    }
+  });
+  // 边打边搜：停手半秒就查一次。回车与按钮照旧立刻查；输入法拼字期间不查。
+  $("search-input").addEventListener("compositionstart", () => {
+    searchTimer = clearTimeout(searchTimer);
+  });
+  $("search-input").addEventListener("input", () => {
+    if (searchTimer) {
+      clearTimeout(searchTimer);
+    }
+    const query = $("search-input").value.trim();
+    if (!query) {
+      return;
+    }
+    searchTimer = setTimeout(() => {
+      searchTimer = 0;
+      runSearch();
+    }, 500);
+  });
   // 引导第 1 步也有「选择文件夹」（验收标准 10）：填进输入框，等「下一步」时一起存。
   $("wizard-archive-browse").addEventListener("click", async () => {
     const picked = await pickDirectory($("wizard-archive"));

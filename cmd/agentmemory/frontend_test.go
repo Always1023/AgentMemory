@@ -1351,9 +1351,9 @@ func TestContentScrollsInsideItsOwnFrame(t *testing.T) {
 		t.Error("内容框里的子项不该被挤扁：放不下时就该滚")
 	}
 
-	// 首页渠道、日志、引导三步都是同一个框；设置页是表单那一块。
-	if n := strings.Count(page, `class="panel scroll-area"`); n != 5 {
-		t.Errorf("首页、日志与引导三步都该用 panel scroll-area，实际 %d 处", n)
+	// 首页渠道、日志、搜索、引导三步都是同一个框；设置页是表单那一块（I-084 起多一页）。
+	if n := strings.Count(page, `class="panel scroll-area"`); n != 6 {
+		t.Errorf("首页、日志、搜索与引导三步都该用 panel scroll-area，实际 %d 处", n)
 	}
 	if !strings.Contains(page, `class="settings__body scroll-area"`) {
 		t.Error("设置页的表单区要用同一个滚动框，底部的保存行留在框外")
@@ -1373,6 +1373,86 @@ func TestContentScrollsInsideItsOwnFrame(t *testing.T) {
 	for _, sel := range []string{".shell__head", ".nav", ".actions", ".settings__foot"} {
 		if !strings.Contains(cssRule(t, css, sel), "flex: none") {
 			t.Errorf("%s 固定在框外，不该被内容区挤小", sel)
+		}
+	}
+}
+
+// 搜索页（I-084 / F13）：四个元素在、接线在、视图切换认识它。
+func TestSearchViewIsWired(t *testing.T) {
+	page := readSource(t, indexHTML)
+	front := readSource(t, appJS)
+
+	for _, want := range []string{
+		`id="nav-search"`, `id="view-search"`, `id="search-input"`,
+		`id="search-go"`, `id="search-note"`, `id="search-rows"`, ">搜索<",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("搜索页缺 %s", want)
+		}
+	}
+	if !strings.Contains(front, `$("nav-search").addEventListener("click", openSearch)`) {
+		t.Error("搜索入口没接上导航栏")
+	}
+	if !strings.Contains(front, `window.go.main.App.SearchMemory`) {
+		t.Error("搜索没走后端绑定")
+	}
+	// 切片导出（F14）：按钮在、接线在、绑定在。
+	for _, want := range []string{`id="search-export"`, ">导出切片<"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("切片导出缺 %s", want)
+		}
+	}
+	if !strings.Contains(front, `window.go.main.App.ExportSearchNDJSON`) {
+		t.Error("切片导出没走后端绑定")
+	}
+	// 过滤（I-084 A2）：三个控件在，SearchOptions 与带参检索的接线在。
+	for _, want := range []string{`id="search-channel"`, `id="search-days"`, `id="search-project"`, `id="search-project-options"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("搜索过滤缺 %s", want)
+		}
+	}
+	if !strings.Contains(front, `window.go.main.App.SearchOptions`) {
+		t.Error("过滤下拉没走后端绑定")
+	}
+	if !strings.Contains(front, `App.SearchMemory(query, channelID, project, days)`) {
+		t.Error("搜索没把过滤条件带给后端")
+	}
+	show := functionBody(t, front, "show")
+	for _, want := range []string{`$("view-search")`, `$("nav-search")`} {
+		if !strings.Contains(show, want) {
+			t.Errorf("show() 没有管 %s", want)
+		}
+	}
+}
+
+// I-084 验收反馈：搜索页「全部渠道」这个默认项必须带空 value。
+// 不写 value 时浏览器拿显示文字当值，后端按渠道精确过滤就一条都查不到。
+func TestSearchDefaultChannelOptionHasEmptyValue(t *testing.T) {
+	front := readSource(t, appJS)
+	if !strings.Contains(front, `allChannels.value = ""`) {
+		t.Error("「全部渠道」没有显式的空 value：默认过滤会按渠道名精确匹配，结果为空")
+	}
+}
+
+// I-084 验收反馈：搜索命中用「标题一行 + 片段两行」的块布局。
+// 复用渠道行的「名称 + 说明」并排布局时，长标题会把片段挤成窄条，行高一大一小。
+func TestSearchRowsUseBlockLayout(t *testing.T) {
+	front := readSource(t, appJS)
+	body := functionBody(t, front, "searchRow")
+	if !strings.Contains(body, `el("li", "search-hit")`) {
+		t.Error("搜索命中应当用 search-hit 块布局")
+	}
+	if strings.Contains(body, "row__name") {
+		t.Error("搜索命中不该复用渠道行的并排布局：长标题会把片段挤窄")
+	}
+}
+
+// I-091：设置页要有「对外接口」开关，切换后立刻保存。
+func TestSettingsHasMCPSwitch(t *testing.T) {
+	front := readSource(t, appJS)
+	for _, want := range []string{`mcpOn.id = "set-mcp-on"`, "mcpEnabled: mcpOn.checked", `"对外接口"`} {
+		if !strings.Contains(front, want) {
+			t.Errorf("设置页缺 %q", want)
 		}
 	}
 }

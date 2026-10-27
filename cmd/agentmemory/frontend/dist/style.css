@@ -320,6 +320,54 @@ input[type="checkbox"] {
   margin-left: auto;
 }
 
+/* 搜索结果行（I-084）：标题一行、片段两行，行高齐整。
+   早先复用渠道行「名称 + 说明」并排的布局，标题一长就把片段挤成窄条，
+   行高一高一低；现在标题单独一行、长标题用省略号收口，片段固定两行。 */
+.search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.search-hit__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.search-hit__channel {
+  flex: none;
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-xs);
+}
+
+.search-hit__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(var(--text-primary));
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-hit__when {
+  flex: none;
+  color: rgb(var(--text-tertiary));
+  font-size: var(--text-xs);
+}
+
+.search-hit__snippet {
+  display: -webkit-box;
+  min-height: calc(var(--text-sm) * var(--leading-normal) * 2);
+  overflow: hidden;
+  color: rgb(var(--text-secondary));
+  line-height: var(--leading-normal);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 /* 行内静默：次要动作给描边款、不给底色，免得和主操作抢注意力。 */
 .btn--quiet {
   padding: var(--space-1) var(--space-3);
@@ -560,6 +608,12 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* 搜索过滤的下拉：复用 .input 的外观，宽度按内容走、不摊满整行。 */
+select.input {
+  flex: none;
+  width: auto;
 }
 
 .input-row .input {

@@ -37,7 +37,7 @@ func TestParseActiveBranch(t *testing.T) {
 	if session.Title != "项目检查" {
 		t.Errorf("标题 = %q", session.Title)
 	}
-	if session.ProjectPath != "D:/work/AgentMemory" {
+	if session.ProjectPath != "D:/work/demo" {
 		t.Errorf("项目路径 = %q", session.ProjectPath)
 	}
 	if len(session.Messages) != 3 {

@@ -35,6 +35,7 @@
       <nav class="nav" id="nav" hidden>
         <button class="nav__item" id="nav-main" type="button">首页</button>
         <button class="nav__item" id="nav-log" type="button">日志</button>
+        <button class="nav__item" id="nav-search" type="button">搜索</button>
         <button class="nav__item" id="nav-settings" type="button">设置</button>
       </nav>
 
@@ -122,6 +123,36 @@
           <p class="hint">一天一行；没跑的那天也占一行。只记最近 90 天。</p>
           <ul class="rows" id="log-rows"></ul>
           <p class="hint" id="log-note" hidden></p>
+        </section>
+      </main>
+
+      <!-- ── 搜索页（I-084 / F13）─────────────────────────────────────
+           关键词全文检索：后端 FTS5 索引，前端只摆输入框与结果行。
+           空 / 无命中 / 失败三种状态都写在 note 那一行。 -->
+      <main class="shell__main" id="view-search" hidden>
+        <section class="panel scroll-area">
+          <h2 class="panel__title">搜索</h2>
+          <p class="hint">按关键词搜全部会话的正文与工具内容；中文按整词匹配，同一会话只列一条。</p>
+          <div class="input-row">
+            <select class="input" id="search-channel" aria-label="按渠道过滤">
+              <option value="">全部渠道</option>
+            </select>
+            <select class="input" id="search-days" aria-label="按时间过滤">
+              <option value="0">不限时间</option>
+              <option value="1">今天以来</option>
+              <option value="7">最近 7 天</option>
+              <option value="30">最近 30 天</option>
+            </select>
+            <input class="input" id="search-project" type="text" placeholder="项目路径前缀（可空）" list="search-project-options">
+            <datalist id="search-project-options"></datalist>
+          </div>
+          <div class="input-row">
+            <input class="input" id="search-input" type="text" placeholder="输入关键词，回车搜索">
+            <button class="btn btn--primary" id="search-go" type="button">搜索</button>
+            <button class="btn" id="search-export" type="button">导出切片</button>
+          </div>
+          <p class="hint" id="search-note" hidden></p>
+          <ul class="rows" id="search-rows"></ul>
         </section>
       </main>
 

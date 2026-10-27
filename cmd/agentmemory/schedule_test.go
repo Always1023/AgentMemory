@@ -142,7 +142,7 @@ const sampleTaskXML = `<?xml version="1.0" encoding="UTF-16"?>
   </Triggers>
   <Actions Context="Author">
     <Exec>
-      <Command>"D:\work\AgentMemory\cmd\agentmemory\build\bin\AgentMemory.exe"</Command>
+      <Command>"D:\Coding\Memory\cmd\agentmemory\build\bin\AgentMemory.exe"</Command>
       <Arguments>--collect</Arguments>
     </Exec>
   </Actions>
@@ -189,7 +189,7 @@ func TestWriteThenReadGivesTheNewTime(t *testing.T) {
 	if status.DailyAt != "07:30" {
 		t.Errorf("读回来的时刻是 %q，想要 07:30", status.DailyAt)
 	}
-	if status.Action != `"D:\work\AgentMemory\cmd\agentmemory\build\bin\AgentMemory.exe" --collect` {
+	if status.Action != `"D:\Coding\Memory\cmd\agentmemory\build\bin\AgentMemory.exe" --collect` {
 		t.Errorf("读回来的动作不对：%q", status.Action)
 	}
 

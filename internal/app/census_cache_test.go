@@ -199,7 +199,12 @@ func TestCensusCacheDoesNotTouchCollectCursor(t *testing.T) {
 		t.Fatalf("Census: %v", err)
 	}
 
-	cursor, err := store.Open(cacheDir)
+	db, err := store.OpenDB(cacheDir)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+	cursor, err := db.OpenCursor()
 	if err != nil {
 		t.Fatalf("Open cursor: %v", err)
 	}

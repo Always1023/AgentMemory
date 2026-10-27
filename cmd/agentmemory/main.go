@@ -3,6 +3,7 @@
 // 两种模式（见 docs/ARCHITECTURE.md 第 2 节）：
 //   - 不带参数：打开图形界面
 //   - --collect：静默收集一次后退出，供系统定时任务调用
+//   - --mcp：以 MCP 服务（stdio）跑起来，供 dsh / Claude Code 等外部 Agent 调用
 //
 // 静默模式的三条自我约束：
 //   - 不弹窗、不读标准输入（定时任务里没人能回答它）；
@@ -65,6 +66,7 @@ const (
 // cliOptions 是命令行选项。
 type cliOptions struct {
 	collect bool
+	mcp     bool
 }
 
 func main() {
@@ -112,6 +114,9 @@ func run(args []string, out, errOut io.Writer) int {
 		return exitUsage
 	}
 
+	if opts.mcp {
+		return runMCP(cfg, logger)
+	}
 	if !opts.collect {
 		return runGUI(logger)
 	}
@@ -165,11 +170,13 @@ func parseArgs(args []string, errOut io.Writer) (cliOptions, error) {
 	fs.Usage = func() {
 		fmt.Fprintf(errOut, "用法：agentmemory [-collect]\n\n")
 		fmt.Fprintf(errOut, "  -collect  静默收集一次后退出；不弹窗、不需要输入\n")
+		fmt.Fprintf(errOut, "  -mcp      以 MCP 服务（stdio）跑起来，供 dsh / Claude Code 等外部 Agent 调用\n")
 		fmt.Fprintf(errOut, "  不带参数  打开图形界面\n")
 	}
 
 	var opts cliOptions
 	fs.BoolVar(&opts.collect, "collect", false, "静默收集一次后退出，不弹窗、不需要输入")
+	fs.BoolVar(&opts.mcp, "mcp", false, "以 MCP 服务（stdio）跑起来，供外部 Agent 调用（设置里要先打开「对外接口」）")
 	if err := fs.Parse(args); err != nil {
 		return cliOptions{}, err
 	}

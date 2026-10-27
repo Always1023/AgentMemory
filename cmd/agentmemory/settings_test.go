@@ -263,13 +263,18 @@ func TestSettingsShowsTheLastScheduledRun(t *testing.T) {
 	readyConfig(t, t.TempDir())
 
 	now := time.Now()
+	runDB, err := store.OpenDB(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runDB.Close()
 	scheduled := now.Add(-3 * time.Hour).Truncate(time.Minute)
 	manual := scheduled.Add(time.Hour)
 	for _, run := range []store.Run{
 		{At: scheduled, Source: runSourceSchedule},
 		{At: manual, Source: runSourceManual},
 	} {
-		if err := store.AppendRun(home, run, runLogKeepDays, now); err != nil {
+		if err := runDB.AppendRun(run, runLogKeepDays, now); err != nil {
 			t.Fatalf("写运行记录: %v", err)
 		}
 	}
@@ -290,7 +295,12 @@ func TestSettingsSaysWhenThereIsNoScheduledRun(t *testing.T) {
 	readyConfig(t, t.TempDir())
 
 	now := time.Now()
-	if err := store.AppendRun(home, store.Run{At: now, Source: runSourceManual}, runLogKeepDays, now); err != nil {
+	runDB, err := store.OpenDB(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runDB.Close()
+	if err := runDB.AppendRun(store.Run{At: now, Source: runSourceManual}, runLogKeepDays, now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -307,8 +317,8 @@ func TestSettingsSaysWhenThereIsNoScheduledRun(t *testing.T) {
 func TestSettingsSurvivesABrokenRunLog(t *testing.T) {
 	home := useTempHome(t)
 	readyConfig(t, t.TempDir())
-	// 把记录的位置占成一个目录：读它必定失败。
-	if err := os.MkdirAll(filepath.Join(home, store.RunsFileName), 0o755); err != nil {
+	// 把主库占成一个坏文件：读它必定失败。
+	if err := os.WriteFile(filepath.Join(home, store.DBFileName), []byte("这不是一个库"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -672,5 +682,48 @@ func TestSaveSettingsDoesNotCopyWhenNotChosen(t *testing.T) {
 	}
 	if !strings.Contains(got.ArchiveNote, "不会自己跟过来") {
 		t.Errorf("要说清它们不会自己过来、以及怎么弄过来，实际 %q", got.ArchiveNote)
+	}
+}
+
+// I-091：设置页「对外接口」开关落进配置，读回来能看到；命令示例带上 -mcp。
+func TestMCPSwitchRoundTrips(t *testing.T) {
+	useTempHome(t)
+	ui := settingsApp(t, &fakeSchtasks{})
+
+	before, err := ui.Settings()
+	if err != nil {
+		t.Fatalf("读设置: %v", err)
+	}
+	if before.MCPEnabled {
+		t.Fatal("默认应当是关的")
+	}
+
+	on := true
+	after, err := ui.SaveSettings(SettingsInput{MCPEnabled: &on})
+	if err != nil {
+		t.Fatalf("保存: %v", err)
+	}
+	if !after.MCPEnabled {
+		t.Fatal("打开后读回来还是关的")
+	}
+	if strings.HasSuffix(after.MCPCommand, "-mcp") {
+		t.Fatalf("命令里不该带 -mcp（要放参数里）: %q", after.MCPCommand)
+	}
+	if after.MCPArgs != "-mcp" {
+		t.Fatalf("参数示例不对: %q", after.MCPArgs)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.MCPEnabled {
+		t.Fatal("配置里没记下来")
+	}
+
+	off := false
+	after, err = ui.SaveSettings(SettingsInput{MCPEnabled: &off})
+	if err != nil || after.MCPEnabled {
+		t.Fatalf("关回去失败: %+v %v", after, err)
 	}
 }

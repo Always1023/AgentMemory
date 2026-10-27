@@ -4,14 +4,14 @@ package store
 //
 // 与日志文件分工不同：日志是给人读的、不保证好解析；这一份是结构化的，
 // 界面按天读回去，回答「定时任务那天跑没跑、收了多少」。
+// 存储在主库 runs 表；旧 runs.jsonl 只在首次导入时读一次。
 //
-// 依赖方向与游标一致：只依赖标准库，目录由调用方传入（不 import config）。
+// 依赖方向与水位一致：只依赖标准库，主库由调用方传入（不 import config）。
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-// RunsFileName 是运行记录的文件名；本包是它唯一的写入者。
+// RunsFileName 是旧运行记录的文件名；升级后只读导入一次。
 const RunsFileName = "runs.jsonl"
 
 // dayLayout 是记录里「一天」的写法。
@@ -51,74 +51,59 @@ type Run struct {
 	BackupFailed bool   `json:"backupFailed,omitempty"`
 }
 
-// RunsPath 给出运行记录的文件路径。
-func RunsPath(dir string) string { return filepath.Join(dir, RunsFileName) }
-
 // AppendRun 添一行运行记录，顺手把太老的行清掉。
 //
 // 只追加：已有行不会被改（I-030 验收标准 4）。返回错误由调用方决定怎么办——
 // 记录是给人看的账，不该因为它没写成而让收集本身失败。
-func AppendRun(dir string, run Run, keepDays int, now time.Time) error {
-	if strings.TrimSpace(dir) == "" {
-		return errors.New("没有可写运行记录的目录")
-	}
+func (d *DB) AppendRun(run Run, keepDays int, now time.Time) error {
 	if keepDays < 1 {
 		keepDays = 1
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("建运行记录目录 %s: %w", dir, err)
-	}
-
-	line, err := json.Marshal(run)
+	tx, err := d.handle.Begin()
 	if err != nil {
-		return fmt.Errorf("整理这一轮的记录: %w", err)
+		return err
 	}
+	defer func() { _ = tx.Rollback() }()
 
-	f, err := os.OpenFile(RunsPath(dir), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("打开运行记录 %s: %w", RunsPath(dir), err)
+	if _, err := tx.Exec(`INSERT INTO runs
+		(at, source, scope, found, new, archived, failures, failed, empty, backup, backup_failed)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		fmtTime(run.At), run.Source, run.Scope, run.Found, run.New, run.Archived,
+		run.Failures, boolToInt(run.Failed), run.Empty, run.Backup, boolToInt(run.BackupFailed)); err != nil {
+		return err
 	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		_ = f.Close()
-		return fmt.Errorf("写运行记录 %s: %w", RunsPath(dir), err)
+	cut := cutoff(keepDays, now)
+	if _, err := tx.Exec(`DELETE FROM runs WHERE at < ?`, fmtTime(cut)); err != nil {
+		return err
 	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("写运行记录 %s: %w", RunsPath(dir), err)
-	}
-
-	return pruneRuns(dir, keepDays, now)
+	return tx.Commit()
 }
 
 // ReadRuns 读回 keepDays 天以内的行，按时间从早到晚排好。
-//
-// 一条读不懂的行跳过就好：记录是账，一行坏了不该让整页打不开。
-func ReadRuns(dir string, keepDays int, now time.Time) ([]Run, error) {
-	raw, err := os.ReadFile(RunsPath(dir))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("读运行记录 %s: %w", RunsPath(dir), err)
-	}
-
+func (d *DB) ReadRuns(keepDays int, now time.Time) ([]Run, error) {
 	cut := cutoff(keepDays, now)
+	rows, err := d.handle.Query(`SELECT at, source, scope, found, new, archived, failures, failed, empty, backup, backup_failed
+		FROM runs WHERE at >= ? ORDER BY at`, fmtTime(cut))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
 	out := make([]Run, 0, 64)
-	for _, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
+	for rows.Next() {
 		var run Run
-		if err := json.Unmarshal([]byte(line), &run); err != nil {
-			continue
+		var at string
+		var failed, backupFailed int
+		if err := rows.Scan(&at, &run.Source, &run.Scope, &run.Found, &run.New, &run.Archived,
+			&run.Failures, &failed, &run.Empty, &run.Backup, &backupFailed); err != nil {
+			return nil, err
 		}
-		if run.At.Before(cut) {
-			continue
-		}
+		run.At = parseTime(at)
+		run.Failed = failed != 0
+		run.BackupFailed = backupFailed != 0
 		out = append(out, run)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
-	return out, nil
+	return out, rows.Err()
 }
 
 // DailyRun 是某一天的合计，界面一天一行。
@@ -237,51 +222,66 @@ func hasString(list []string, want string) bool {
 	return false
 }
 
-// pruneRuns 丢掉太老的行（I-030 验收标准 5）：超过 keepDays 天的一律清掉。
-//
-// 没得清就一个字都不动——省一次重写，也不给「历史被改过」留口子。
-func pruneRuns(dir string, keepDays int, now time.Time) error {
-	raw, err := os.ReadFile(RunsPath(dir))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+func boolToInt(b bool) int {
+	if b {
+		return 1
 	}
-	if err != nil {
-		return fmt.Errorf("读运行记录 %s: %w", RunsPath(dir), err)
-	}
+	return 0
+}
 
-	cut := cutoff(keepDays, now)
-	kept := make([]string, 0, 64)
-	total := 0
-	for _, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimSpace(line)
+// readLegacyRuns 读旧 runs.jsonl。文件不在返回 ok = false；
+// 一条读不懂的行跳过就好——导入是搬账，不是校对。
+func readLegacyRuns(dir string) (runs []Run, ok bool, err error) {
+	f, readErr := os.Open(filepath.Join(dir, RunsFileName))
+	if readErr != nil {
+		if errors.Is(readErr, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, readErr
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		total++
 		var run Run
-		if err := json.Unmarshal([]byte(line), &run); err != nil {
-			continue // 坏行丢掉
-		}
-		if run.At.Before(cut) {
+		if json.Unmarshal([]byte(line), &run) != nil {
 			continue
 		}
-		kept = append(kept, line)
+		runs = append(runs, run)
 	}
-	if len(kept) == total {
-		return nil
-	}
+	return runs, true, scanner.Err()
+}
 
-	// 先写临时文件再改名：中途出问题也不会留下一半的记录。
-	tmp := RunsPath(dir) + ".tmp"
-	body := ""
-	if len(kept) > 0 {
-		body = strings.Join(kept, "\n") + "\n"
+// importLegacyRuns 把旧运行记录搬进主库（只在 runs 表为空时做一次）。
+func (d *DB) importLegacyRuns(runs []Run) error {
+	tx, err := d.handle.Begin()
+	if err != nil {
+		return err
 	}
-	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
-		return fmt.Errorf("整理运行记录 %s: %w", tmp, err)
+	defer func() { _ = tx.Rollback() }()
+	for _, run := range runs {
+		if _, err := tx.Exec(`INSERT INTO runs
+			(at, source, scope, found, new, archived, failures, failed, empty, backup, backup_failed)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			fmtTime(run.At), run.Source, run.Scope, run.Found, run.New, run.Archived,
+			run.Failures, boolToInt(run.Failed), run.Empty, run.Backup, boolToInt(run.BackupFailed)); err != nil {
+			return err
+		}
 	}
-	if err := os.Rename(tmp, RunsPath(dir)); err != nil {
-		return fmt.Errorf("替换运行记录 %s: %w", RunsPath(dir), err)
+	// 搬完顺手按 90 天口径清一次旧账，与日常 AppendRun 的行为一致。
+	_, err = tx.Exec(`DELETE FROM runs WHERE at < ?`, fmtTime(cutoff(90, time.Now())))
+	if err != nil {
+		return err
 	}
-	return nil
+	return tx.Commit()
+}
+
+// sortRuns 按时间从早到晚排（导入侧保持与 ReadRuns 同样的顺序约定）。
+func sortRuns(runs []Run) {
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].At.Before(runs[j].At) })
 }

@@ -1,10 +1,16 @@
 package store
 
+// 首页统计缓存（原 census.json，现为主库 census 表）：按源文件复用
+// 「有效 / 空」的解析结论。它与收集水位分开：水位记的是「这个文件已经
+// 处理进库」，统计缓存只记「这个文件里有没有会话消息」——混在一起会让
+// 收集跳过还没入库的文件。
+//
+// 旧 census.json 只在首次导入时读一次，不再有写入者。
+
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,14 +19,11 @@ import (
 	"github.com/Always1023/AgentMemory/internal/channel"
 )
 
-// CensusFileName 是首页统计缓存的文件名。
-//
-// 它与收集游标 index.json 分开：游标记的是「这个文件已经处理进归档」，
-// 统计缓存只记「这个文件里有没有会话消息」——混在一起会让收集跳过还没归档的文件。
+// CensusFileName 是旧统计缓存的文件名；升级后只读导入一次。
 const CensusFileName = "census.json"
 
-// censusVersion 是统计缓存的结构版本；对不上就按空缓存重建。
-const censusVersion = 1
+// legacyCensusVersion 是旧统计缓存的结构版本；对不上就按空缓存导入。
+const legacyCensusVersion = 1
 
 const (
 	// CensusValid 表示这个源文件解析后至少有一条消息。
@@ -43,51 +46,26 @@ type censusFile struct {
 	Entries []CensusEntry `json:"entries"`
 }
 
-// CensusCache 是首页统计缓存的读写句柄。
+// CensusCache 是首页统计缓存的读写句柄。账在内存里改，Save 经 persist 出口
+// 落进主库；旧 JSON 只在导入时读一次。所有方法都可 Nil 安全——
+// 测试里注入了渠道又没给数据目录时，调用方直接不开缓存。
 type CensusCache struct {
-	dir     string
 	entries map[string]CensusEntry
 	rebuilt bool
+	persist func([]CensusEntry) error
 }
 
-// OpenCensus 打开 dir 下的统计缓存。
-//
-// 文件不在、读坏了、版本对不上，都按空缓存重建——它只是加速用的缓存，
-// 重读一遍不会有任何数据损失。只有路径被指到普通文件上时才算错。
-func OpenCensus(dir string) (*CensusCache, error) {
-	c := &CensusCache{dir: dir, entries: map[string]CensusEntry{}}
-
-	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
-		return nil, fmt.Errorf("统计缓存目录 %s 不是目录", dir)
-	}
-
-	raw, err := os.ReadFile(c.path())
-	if errors.Is(err, fs.ErrNotExist) {
-		c.rebuilt = true
-		return c, nil
-	}
+// OpenCensus 从主库打开统计缓存。旧 census.json 的只读导入集中在 OpenDB 的
+// importLedgers 里做，这里只管从主库装账。
+func (d *DB) OpenCensus() (*CensusCache, error) {
+	entries, err := d.loadCensus()
 	if err != nil {
-		return nil, fmt.Errorf("读统计缓存 %s: %w", c.path(), err)
+		return nil, err
 	}
-
-	var f censusFile
-	if err := json.Unmarshal(raw, &f); err != nil || f.Version != censusVersion {
-		c.rebuilt = true
-		return c, nil
-	}
-
-	for _, e := range f.Entries {
-		if e.Path == "" || (e.State != CensusValid && e.State != CensusEmpty) {
-			continue
-		}
-		c.entries[e.Path] = e
-	}
-	return c, nil
+	return &CensusCache{entries: entries, rebuilt: len(entries) == 0, persist: d.flushCensus}, nil
 }
 
-func (c *CensusCache) path() string { return filepath.Join(c.dir, CensusFileName) }
-
-// Rebuilt 报告这次打开是否从头重建（文件不在或内容坏了）。
+// Rebuilt 报告这次打开是否从头重建（主库没账、旧文件也没有或读不出）。
 func (c *CensusCache) Rebuilt() bool {
 	if c == nil {
 		return false
@@ -157,28 +135,37 @@ func (c *CensusCache) Entries() []CensusEntry {
 	return out
 }
 
-// Save 把统计缓存落盘（先写临时文件再改名替换）。
+// Save 把统计缓存经 persist 出口落盘（生产是主库 census 表，整表替换）。
 func (c *CensusCache) Save() error {
-	if c == nil {
+	if c == nil || c.persist == nil {
 		return nil
 	}
-	raw, err := json.MarshalIndent(censusFile{Version: censusVersion, Entries: c.Entries()}, "", "  ")
-	if err != nil {
-		return fmt.Errorf("序列化统计缓存: %w", err)
-	}
-	raw = append(raw, '\n')
-
-	if err := os.MkdirAll(c.dir, 0o755); err != nil {
-		return fmt.Errorf("建统计缓存目录 %s: %w", c.dir, err)
-	}
-
-	tmp := c.path() + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return fmt.Errorf("写统计缓存临时文件 %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, c.path()); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("替换统计缓存文件 %s: %w", c.path(), err)
+	if err := c.persist(c.Entries()); err != nil {
+		return err
 	}
 	return nil
+}
+
+// readLegacyCensus 读旧 census.json。文件不在返回 ok = false；
+// 读坏了、版本对不上都返回空账——缓存坏了重建，没有数据损失。
+func readLegacyCensus(dir string) (entries map[string]CensusEntry, ok bool, err error) {
+	raw, readErr := os.ReadFile(filepath.Join(dir, CensusFileName))
+	if readErr != nil {
+		if errors.Is(readErr, os.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("读旧统计缓存 %s: %w", dir, readErr)
+	}
+	entries = map[string]CensusEntry{}
+	var f censusFile
+	if json.Unmarshal(raw, &f) != nil || f.Version != legacyCensusVersion {
+		return entries, true, nil
+	}
+	for _, e := range f.Entries {
+		if e.Path == "" || (e.State != CensusValid && e.State != CensusEmpty) {
+			continue
+		}
+		entries[e.Path] = e
+	}
+	return entries, true, nil
 }

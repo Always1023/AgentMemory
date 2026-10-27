@@ -1,117 +1,106 @@
-# AgentMemory · 新用户使用说明
+# AgentMemory
 
-构建日期：2026-10-23
+把本机各个 AI 编码工具的对话，收进一个**本地记忆库**。
 
-## 下载选择
+Claude Code、Codex、Cursor、OpenCode 等 20 多个工具的会话被解析成统一事件流，写进一个 SQLite 主库（唯一真源，只追加）；Markdown 归档、全文搜索、喂模型的切片、统计与视角，全部从库里派生，随时可以重建。默认只留本地，可选备份到你自己的 git 仓库。
 
-- `AgentMemory-v0.2.1-exe-plugin.zip`：桌面版 + 网页版插件 + 这份说明（推荐，一次下齐）。
-- `AgentMemory.exe`：只要桌面版。
-- `AgentMemory-Web-0.2.0.zip`：只要网页版插件。
+外部 Agent（dsh、Claude Code、Codex……）可以通过**只读的 MCP 接口**直接检索这份记忆。
 
-## 一、这是什么
+## 能做什么
 
-AgentMemory 把本机 AI 编码工具的聊天记录整理成 Markdown，存到你指定的目录。
-默认只留本地，不联网、不需要账号；想更保险，可以选 Git 仓库备份。
-程序只读各工具的会话目录，不修改原始数据。
+| 能力 | 说明 |
+|---|---|
+| 渠道自动检测 | 启动时扫描本机，列出「可用 / 未安装」的渠道，不用手填路径 |
+| 增量收集 | 只读有变化的源文件；第一次全收，之后只收新的 |
+| 记忆库 | SQLite 事件流（会话 + 事件），幂等入库；解析规则升级可重放 |
+| 全文检索 | 界面搜索框，中文按整词短语匹配，可按渠道 / 项目 / 时间过滤 |
+| 模型切片 | 会话或检索结果导出成 NDJSON，直接喂模型 |
+| 统计与视角 | 渠道 / 项目 / 时间 / 规模 / 工具；按周活跃度、星期×时段、规模分档 |
+| MCP 只读接口 | 五个工具：检索、读会话、读维度、导出切片、概况 |
+| 备份 | 默认仅本地；可选 git（Markdown 导出 + 主库转储） |
+| 定时收集 | 交给 Windows 任务计划程序，程序本身不常驻 |
+| 网页版插件 | 配套 Chrome / Edge 插件，把网页版 AI 对话存成 Markdown 并进库 |
 
-AgentMemory 现在由两个配套部分组成：桌面端 `AgentMemory.exe` 和网页版捕获插件 `AgentMemory-Web-0.2.0.zip`。桌面端收本机 AI 编码工具的会话；插件收网页版 AI 对话；两边可以写到同一个归档目录。
+## 快速开始
 
-### 目前支持的 Agent / 工具
+1. 到 Releases 下载 `AgentMemory.exe`（或自己构建，见下）。
+2. 双击打开，跟着三步引导：选归档目录 → 看检测到的渠道 → 定备份方式。
+3. 回首页点「增量收集」。
 
-本版本会检测并读取以下工具已经产生的会话（只读，不修改原始数据）：
+第一次会全量收一遍，之后都是只收新增。定时任务跑的是同一件事。
 
-- Claude Code
-- Codex CLI
-- CommandCode
-- Continue
-- VS Code Copilot Chat
-- Cursor
-- Factory Droid
-- OpenCode
-- WorkBuddy
-- ZCode
-- Gemini CLI
-- Grok Build
-- Hermes
-- MiniMax Code
-- OpenClaw
-- Pi
-- Qoder
-- Cherry Studio
+## 接给外部 Agent（MCP）
 
-没列出的工具不会被读取；对应工具没装或没用过时，引导里会标「未检测到」。
+1. 桌面端 → 设置页 →「对外接口」→ 打开。下面会显示两项：命令、参数。
+2. 在客户端里新增一个 `stdio` 类型的 MCP server：
 
-## 二、网页版捕获插件（配套）
+| 项 | 填什么 |
+|---|---|
+| 命令 / command | `D:\...\AgentMemory.exe`（exe 完整路径，**不带** `-mcp`） |
+| 参数 / args | `-mcp` |
 
-这个包同时带一个 Chrome / Edge 插件 `AgentMemory-Web-0.2.0.zip`：把网页版 AI 对话批量保存成 Markdown，和桌面端落到同一个归档目录。桌面端收本机 AI 编码工具的会话，插件收网页版对话，两边可以配合使用。
+Claude Code（`~/.claude.json`）：
 
-- **安装**：解压插件 zip；打开 `chrome://extensions` 或 `edge://extensions`，开启「开发者模式」，点「加载已解压的扩展程序」，选解压后的目录。
-- **使用**：点扩展图标 →「打开批量保存」→ 选保存目录；如果选的是桌面端归档目录，勾「这是桌面端归档目录」，文件会写到 `<归档目录>/网页版/<站点>/`。桌面端按「桌面端 / 网页版」分开统计。
-- **目前支持**：DeepSeek、Kimi、腾讯元宝；ChatGPT 入口保留，真实站点尚未校准。
-- **隐私**：只读当前账号的网页版会话；登录令牌只在站点页面内存里使用，不保存、不写日志、不传往扩展页或其他站点；插件不读写桌面端的 `index.json`、`census.json`、`runs.jsonl`。
-- 插件有自己的增量索引；不点「批量保存」就不写盘。
+```json
+"AgentMemory": {
+  "type": "stdio",
+  "command": "D:\\path\\to\\AgentMemory.exe",
+  "args": ["-mcp"]
+}
+```
 
-## 三、运行要求
+Codex（`~/.codex/config.toml`）：
 
-- Windows 10 / 11（64 位）。
-- Microsoft Edge WebView2 Runtime。Windows 11 与新版 Windows 10 通常已自带；如果启动时提示缺少，按提示安装一次即可：<https://developer.microsoft.com/microsoft-edge/webview2/>
-- 程序本身不需要管理员权限。开启定时收集时，会在 Windows 任务计划程序里创建一条当前用户的任务；个别系统策略可能要求权限，按提示处理即可。
-- 程序没有代码签名。Windows SmartScreen 可能提示「未知发布者」；确认文件来源后点「更多信息」→「仍要运行」。部分杀软可能误报 Go 程序，必要时把程序目录加入排除项。
+```toml
+[mcp_servers.AgentMemory]
+command = 'D:\path\to\AgentMemory.exe'
+args = ['-mcp']
+```
 
-## 四、第一次使用
+**常见错误**：把 `-mcp` 一起写进「命令」框。客户端会把整串当文件名，报 `No such file or directory`。用 ccs（CC Switch）这类管理器时，命令与参数是两个框，别填在同一栏；只有单个命令框时，写一个 `AgentMemory-mcp.cmd`（内容 `"<exe 完整路径>" -mcp`）指过去。
 
-1. 把整个文件夹解压到任意目录。不要只把 `AgentMemory.exe` 拖出来，`README.md` 一起留着；插件 zip 单独解压。
-2. 双击 `AgentMemory.exe`。
-3. 按引导走三步：
-   - 选归档目录：收上来的 Markdown 放这里；
-   - 看检测到的渠道：本机装了哪些 AI 编码工具；
-   - 定备份方式：默认「仅本地」，也可以选 Git 仓库。
-4. 进主界面，点「增量收集」。
+接上之后可用：`memory_search`、`memory_get_session`、`memory_facets`、`memory_export_ndjson`、`memory_stats`。
 
-## 五、数据放在哪
+接口**只读**：不改记忆库、不碰各工具的原始会话文件、不能触发收集。设置里关掉开关，客户端就拉不起来。
 
-- 配置、游标、统计缓存、运行记录：`%APPDATA%\AgentMemory`
-- 归档 Markdown：你在引导里选的目录，默认 `%USERPROFILE%\Documents\AgentMemory`
-- 程序文件夹只放 exe 和说明；升级时替换 exe 不会动上面两处。
-- 网页版插件：勾选桌面端归档目录时写到 `<归档目录>/网页版/<站点>/`；单独选目录时写到 `<保存目录>/<站点>/`。
-- 这是「免安装包」，不是「数据跟着文件夹走」的便携模式。数据固定在本机用户目录；换电脑或换 Windows 账号时，要自己复制上面两处。
+## 数据与隐私
 
-## 六、升级与卸载
+- 配置、主库、日志：`%APPDATA%\AgentMemory`（`AGENTMEMORY_HOME` 可换根目录）；主库是其中的 `memory.db`。
+- 归档 Markdown：首次引导里选的目录，默认 `%USERPROFILE%\Documents\AgentMemory`。
+- 程序只读各工具自己的会话目录，不修改任何原始数据。
+- 默认不联网：只有备份（选了 git）和显式开启的模型调用才会发出请求。
 
-- 升级：退出程序，用新版本的 `AgentMemory.exe` 覆盖旧的，再打开。设置、归档、游标、运行记录都会保留，不会重走首次引导。
-- 卸载：删掉程序文件夹即可。`%APPDATA%\AgentMemory` 和归档目录不会自动删除；要删的话自己动手。
-- 如果开过定时，先到「设置 → 定时」关掉，或到任务计划程序删除 `\AgentMemory\Collect`，再删程序文件夹；否则任务会留着，之后到点会失败。
-- 旧版本的配置会在打开时按版本自动迁移，只补字段，不丢已有设置。
-- 插件升级：解压新的插件 zip，在扩展管理页重新加载；已保存的 Markdown 不丢。
+## 备份
 
-## 七、需要开机自启吗？
+默认「仅本地」——不碰网络、不动别人的账号。选 git 时，备份对象是 Markdown 导出与主库转储；备份失败不丢本地数据，下一轮补做。
 
-**不需要。** 程序不会把自己加进启动项，也不需要一直开着窗口：
+## 网页版捕获插件
 
-- 定时收集由 Windows 任务计划程序里的 `\AgentMemory\Collect` 负责。到点它会启动 `AgentMemory.exe --collect`，窗口关着也能跑。
-- 这个任务按当前用户创建。电脑关机、睡眠或用户注销时，那一轮不会跑，也不会自动补跑；开机后打开程序点「增量收集」可以补上，或到设置里改定时时间。
-- 没有「开机自启」开关。想让窗口在登录后自动打开（可选，和定时收集无关）：按 `Win+R` 输入 `shell:startup`，把 `AgentMemory.exe` 的快捷方式放进去。一般不建议，因为每次登录都会多一个窗口。
-- 如果删掉程序文件夹前开过定时，先去「设置 → 定时」关掉，或到任务计划程序删除 `\AgentMemory\Collect`。
+`extension/` 是配套插件，把网页版 AI 对话批量保存成 Markdown，写到归档目录的 `网页版/<站点>/`，桌面端按「桌面端 / 网页版」分开统计。安装与支持的站点见 [`extension/README.md`](extension/README.md)。
 
-## 八、常见问题
+## 开发
 
-- 双击没反应 / 白屏：先确认 WebView2 已安装；再看日志 `%APPDATA%\AgentMemory\logs\agentmemory.log`。
-- SmartScreen 拦截：见「运行要求」最后一条。
-- 定时没跑：设置页「定时」那段看「上次运行 / 下次运行」；日志页看那天有没有记录；再到 Windows 任务计划程序里确认有 `\AgentMemory\Collect` 任务。电脑关机、睡眠或用户注销时那一轮不会跑，开机后可以手动「增量收集」补上。
-- 备份失败：本地归档不受影响；修好网络或 Git 凭据后，下一轮会补推；日志页有失败原因。
-- 渠道没检测到：确认对应工具装过、用过；程序只读它的会话目录，不会改原始数据。也可以在设置页重走一遍引导重新检测。
-- 归档目录写不进：换一个有写权限的目录，别放在需要管理员权限的位置。
-- 插件加载失败 / 目录授权失效：确认解压后的 `manifest.json` 在扩展目录根层；浏览器重启后重新点一次「允许」，已保存的文件不丢。
+```bash
+# 跑测试（GOTMPDIR 挪到项目里，避开杀软对新编译测试二进制的误报）
+export GOTMPDIR="$PWD/.gotmp"
+go test ./...
 
-## 九、隐私
+# 前端语法检查
+node --check cmd/agentmemory/frontend/dist/app.js
 
-- 默认不联网。只有你选了 Git 备份并执行收集时，才会提交并推送。
-- 不读取与渠道无关的文件；不修改渠道原始数据。
-- 日志不记令牌，也不记消息正文全文。
-- 插件只在站点页面里用当前登录态读取会话；不保存令牌，不传往扩展页或其他站点。
+# 开发模式 / 构建
+cd cmd/agentmemory && wails dev
+cd cmd/agentmemory && GOFLAGS=-trimpath wails build
+```
 
-## 十、版本
+要求：Go 1.26、Node 18+（仅插件与语法检查用）、Wails v2。分发构建固定带 `-trimpath`，否则本地路径会进 exe。
 
-- 构建日期：2026-10-23
-- 文件：`AgentMemory.exe`、`AgentMemory-v0.2.1-exe-plugin.zip`、`AgentMemory-Web-0.2.0.zip`、`README.md`
-- 说明：本包为免安装版；程序未签名，分发前请确认来源可信。
+## 文档
+
+- 分发与使用说明：[`docs/PORTABLE-README.md`](docs/PORTABLE-README.md)
+- 需求与架构：[`docs/PRD.md`](docs/PRD.md)、[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- 看板与进度：[`docs/ISSUES.md`](docs/ISSUES.md)
+
+## 反馈
+
+仓库已公开，问题与建议走 GitHub Issues。这个工具只在本机跑，不上传任何对话内容。

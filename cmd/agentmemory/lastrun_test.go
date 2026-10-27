@@ -20,10 +20,15 @@ func TestStateRecoversLastRunFromLog(t *testing.T) {
 	readyConfig(t, archiveDir)
 
 	now := time.Now()
-	if err := store.AppendRun(home, store.Run{At: now.Add(-2 * time.Hour), Archived: 1, Found: 10}, runLogKeepDays, now); err != nil {
+	runDB, err := store.OpenDB(home)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.AppendRun(home, store.Run{At: now, Archived: 8, Found: 1191, Failures: 1}, runLogKeepDays, now); err != nil {
+	defer runDB.Close()
+	if err := runDB.AppendRun(store.Run{At: now.Add(-2 * time.Hour), Archived: 1, Found: 10}, runLogKeepDays, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := runDB.AppendRun(store.Run{At: now, Archived: 8, Found: 1191, Failures: 1}, runLogKeepDays, now); err != nil {
 		t.Fatal(err)
 	}
 

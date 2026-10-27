@@ -39,7 +39,7 @@ func TestParseMessages(t *testing.T) {
 	if session.Title != "Grok 会话" {
 		t.Errorf("标题 = %q", session.Title)
 	}
-	if session.ProjectPath != "D:/work/AgentMemory" {
+	if session.ProjectPath != "D:/work/demo" {
 		t.Errorf("项目路径 = %q", session.ProjectPath)
 	}
 	if len(session.Messages) != 4 {

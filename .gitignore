@@ -21,10 +21,3 @@
 # 而且生成它要跑一遍刚编出来的 exe（wails build 不带 -skipbindings 时），
 # 杀软对「构建工具去运行新生成的、没签名的可执行文件」很敏感。
 /cmd/agentmemory/frontend/wailsjs/
-
-# 公开仓库不包含本地规划文档与个人配置
-/AGENTS.md
-/docs/
-/opencode.json
-/.qoder/
-/tmp_worldmap/

@@ -40,7 +40,12 @@ func PendingByChannel(deps Deps, reports []channel.Report) (map[string]Pending, 
 	if err != nil {
 		return nil, err
 	}
-	cursor, err := store.Open(dir)
+	db, err := store.OpenDB(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	cursor, err := db.OpenCursor()
 	if err != nil {
 		return nil, err
 	}

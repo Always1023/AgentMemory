@@ -137,6 +137,8 @@ var rootSource = map[string]struct {
 	"factory":      {"factory", "os.UserHomeDir()"},
 	"qoder":        {"qoder", "os.UserHomeDir()"},
 	"cherrystudio": {"cherry-studio", "os.UserConfigDir()"},
+	// 网页版归档的根在归档目录（配置注入），兜底走默认归档位置（家目录）。
+	"webarchive": {"web-archive", "os.UserHomeDir()"},
 }
 
 // helperDirs 是 channel 下的共享实现，不是渠道适配器，不参与根目录守卫。

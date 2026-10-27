@@ -17,7 +17,7 @@ func sampleSession() channel.Session {
 		Title:       "项目结构梳理",
 		ProjectPath: `D:\work\demo`,
 		StartedAt:   start,
-		SourceFile:  `C:\Users\test\.claude\projects\D--work-demo\x.jsonl`,
+		SourceFile:  `C:\Users\Always\.claude\projects\D--work-demo\x.jsonl`,
 		Messages: []channel.Message{
 			{Role: channel.RoleUser, Time: start, Text: "帮我看一下这个项目的结构"},
 			{Role: channel.RoleAssistant, Time: start.Add(4 * time.Second), Text: "这是一个 Go 项目。",

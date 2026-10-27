@@ -164,3 +164,14 @@ func TestEntryNeverReadsStandardInput(t *testing.T) {
 		}
 	}
 }
+
+// I-091：--mcp 是独立模式，和 --collect 一样能在命令行上认出来。
+func TestParseArgsMCP(t *testing.T) {
+	opts, err := parseArgs([]string{"-mcp"}, &bytes.Buffer{})
+	if err != nil || !opts.mcp {
+		t.Fatalf("应当认 -mcp：%+v %v", opts, err)
+	}
+	if opts.collect {
+		t.Fatal("-mcp 不该顺带打开收集")
+	}
+}

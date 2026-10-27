@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,29 +68,25 @@ func statFile(t *testing.T, path string) channel.SourceFile {
 	return channel.SourceFile{Path: path, Size: info.Size(), ModTime: info.ModTime()}
 }
 
-// stripFingerprints 把游标改写成旧版本的样子（没有 fingerprint 字段）。
+// stripFingerprints 把主库水位里的内容指纹抹掉，模拟「旧账没有指纹」的状态。
 func stripFingerprints(t *testing.T, baseDir string) {
 	t.Helper()
-	path := filepath.Join(baseDir, store.FileName)
-	raw, err := os.ReadFile(path)
+	db, err := store.OpenDB(baseDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var f struct {
-		Version int           `json:"version"`
-		Entries []store.Entry `json:"entries"`
-	}
-	if err := json.Unmarshal(raw, &f); err != nil {
-		t.Fatal(err)
-	}
-	for i := range f.Entries {
-		f.Entries[i].Fingerprint = ""
-	}
-	out, err := json.MarshalIndent(f, "", "  ")
+	defer db.Close()
+	cursor, err := db.OpenCursor()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, append(out, '\n'), 0o600); err != nil {
+	entries := cursor.Entries()
+	for i := range entries {
+		entries[i].Fingerprint = ""
+	}
+	persist := func(list []store.Entry) error { return db.FlushWatermark(list) }
+	c2 := store.NewCursor(entries, persist)
+	if err := c2.Save(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -172,7 +167,12 @@ func TestPendingByChannelMigratesOldCursorOnce(t *testing.T) {
 		t.Errorf("内容没变时不该算待收，实际 %+v", pending)
 	}
 
-	cursor, err := store.Open(baseDir)
+	runDB, err := store.OpenDB(baseDir)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer runDB.Close()
+	cursor, err := runDB.OpenCursor()
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -214,7 +214,12 @@ func TestPendingByChannelCountsUnarchivedChangeAsNew(t *testing.T) {
 		t.Fatalf("Collect: %v", err)
 	}
 
-	cursor, err := store.Open(baseDir)
+	runDB, err := store.OpenDB(baseDir)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer runDB.Close()
+	cursor, err := runDB.OpenCursor()
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -295,7 +300,12 @@ func TestCollectSkipsModTimeOnlyChange(t *testing.T) {
 		t.Fatalf("第一轮应当归档 1 份，实际 %d", first.Archived())
 	}
 
-	cursor, err := store.Open(baseDir)
+	runDB, err := store.OpenDB(baseDir)
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer runDB.Close()
+	cursor, err := runDB.OpenCursor()
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

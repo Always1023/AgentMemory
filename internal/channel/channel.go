@@ -60,6 +60,13 @@ type Prober interface {
 	Probe(SourceFile) (bool, error)
 }
 
+// ArchiveRootSetter 是导入型渠道的可选能力：它的数据根在用户的**归档目录**里
+//（归档目录由配置决定，不是系统路径），由编排层在检测 / 收集前注入。
+// channel 包不认识配置（AC-10），所以走这个口子而不是读配置。
+type ArchiveRootSetter interface {
+	SetArchiveRoot(archiveDir string)
+}
+
 // Report 是注册表聚合后的一条渠道报告：身份 + 检测结果。
 type Report struct {
 	// ID 是渠道标识。
