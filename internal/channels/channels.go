@@ -14,6 +14,7 @@ import (
 	"github.com/Always1023/AgentMemory/internal/channel/continuedev"
 	"github.com/Always1023/AgentMemory/internal/channel/copilotchat"
 	"github.com/Always1023/AgentMemory/internal/channel/cursor"
+	"github.com/Always1023/AgentMemory/internal/channel/dsh"
 	"github.com/Always1023/AgentMemory/internal/channel/factory"
 	"github.com/Always1023/AgentMemory/internal/channel/gemini"
 	"github.com/Always1023/AgentMemory/internal/channel/grokbuild"
@@ -37,6 +38,7 @@ func All() []channel.Entry {
 		{ID: continuedev.ChannelID, Name: continuedev.Name, Adapter: continuedev.Adapter{}},
 		{ID: copilotchat.ChannelID, Name: copilotchat.Name, Adapter: copilotchat.Adapter{}},
 		{ID: cursor.ChannelID, Name: cursor.Name, Adapter: cursor.Adapter{}},
+		{ID: dsh.ChannelID, Name: dsh.Name, Adapter: dsh.Adapter{}},
 		{ID: factory.ChannelID, Name: factory.Name, Adapter: factory.Adapter{}},
 		{ID: opencode.ChannelID, Name: opencode.Name, Adapter: opencode.Adapter{}},
 		{ID: workbuddy.ChannelID, Name: workbuddy.Name, Adapter: workbuddy.Adapter{}},

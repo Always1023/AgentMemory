@@ -137,6 +137,7 @@ var rootSource = map[string]struct {
 	"factory":      {"factory", "os.UserHomeDir()"},
 	"qoder":        {"qoder", "os.UserHomeDir()"},
 	"cherrystudio": {"cherry-studio", "os.UserConfigDir()"},
+	"dsh":          {"dsh", "os.UserHomeDir()"},
 	// 网页版归档的根在归档目录（配置注入），兜底走默认归档位置（家目录）。
 	"webarchive": {"web-archive", "os.UserHomeDir()"},
 }
