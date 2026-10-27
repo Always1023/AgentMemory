@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/Always1023/AgentMemory/internal/config"
+	"github.com/Always1023/AgentMemory/internal/llm"
 	"github.com/Always1023/AgentMemory/internal/mcp"
 )
 
@@ -33,6 +34,9 @@ func runMCP(cfg config.Config, logger *slog.Logger) int {
 	defer db.Close()
 
 	srv := &mcp.Server{DB: db, ArchiveDir: cfg.ArchiveDir, Logger: logger, Version: "b17"}
+	if cfg.LLMEnabled {
+		srv.LLM = llm.FromEnv()
+	}
 	logger.Info("MCP 服务启动", "归档目录", cfg.ArchiveDir)
 	if err := mcp.Serve(os.Stdin, os.Stdout, srv); err != nil {
 		logger.Error("MCP 服务异常退出", "原因", err)

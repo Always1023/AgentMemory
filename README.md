@@ -16,7 +16,7 @@ Claude Code、Codex、Cursor、OpenCode 等 20 多个工具的会话被解析成
 | 全文检索 | 界面搜索框，中文按整词短语匹配，可按渠道 / 项目 / 时间过滤 |
 | 模型切片 | 会话或检索结果导出成 NDJSON，直接喂模型 |
 | 统计与视角 | 渠道 / 项目 / 时间 / 规模 / 工具；按周活跃度、星期×时段、规模分档 |
-| MCP 只读接口 | 五个工具：检索、读会话、读维度、导出切片、概况 |
+| MCP 只读接口 | 五个工具：检索、读会话、读维度、导出切片、概况；另可按需解读会话（话题 / 决策 / 待办） |
 | 备份 | 默认仅本地；可选 git（Markdown 导出 + 主库转储） |
 | 定时收集 | 交给 Windows 任务计划程序，程序本身不常驻 |
 | 网页版插件 | 配套 Chrome / Edge 插件，把网页版 AI 对话存成 Markdown 并进库 |
@@ -59,7 +59,7 @@ args = ['-mcp']
 
 **常见错误**：把 `-mcp` 一起写进「命令」框。客户端会把整串当文件名，报 `No such file or directory`。用 ccs（CC Switch）这类管理器时，命令与参数是两个框，别填在同一栏；只有单个命令框时，写一个 `AgentMemory-mcp.cmd`（内容 `"<exe 完整路径>" -mcp`）指过去。
 
-接上之后可用：`memory_search`、`memory_get_session`、`memory_facets`、`memory_export_ndjson`、`memory_stats`。
+接上之后可用：`memory_search`、`memory_get_session`、`memory_facets`、`memory_export_ndjson`、`memory_stats`；打开「视角（LLM）」并配好 `AGENTMEMORY_LLM_API_KEY` 后，还能用 `memory_interpret` 按需解读会话（话题 / 决策 / 待办，结果缓存）。
 
 接口**只读**：不改记忆库、不碰各工具的原始会话文件、不能触发收集。设置里关掉开关，客户端就拉不起来。
 

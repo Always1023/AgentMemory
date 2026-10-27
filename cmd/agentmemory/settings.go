@@ -9,6 +9,7 @@ import (
 
 	"github.com/Always1023/AgentMemory/internal/archive"
 	"github.com/Always1023/AgentMemory/internal/config"
+	"github.com/Always1023/AgentMemory/internal/llm"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -49,6 +50,9 @@ type UISettings struct {
 	MCPEnabled bool   `json:"mcpEnabled"`
 	MCPCommand string `json:"mcpCommand"`
 	MCPArgs    string `json:"mcpArgs"`
+	// LLMEnabled 是「视角（LLM）」开关；LLMConfigured / LLMHint 告诉人环境变量齐不齐。
+	LLMEnabled bool   `json:"llmEnabled"`
+	LLMHint    string `json:"llmHint"`
 	// ScheduleNote 是定时那一段的一句说明（读系统失败、或与配置对不上时用它）。
 	ScheduleNote string `json:"scheduleNote"`
 
@@ -74,6 +78,8 @@ type SettingsInput struct {
 	ScheduleDailyAt string `json:"scheduleDailyAt"`
 	// MCPEnabled 为 nil 表示这一项没动；否则按它开关「对外接口」。
 	MCPEnabled *bool `json:"mcpEnabled"`
+	// LLMEnabled 为 nil 表示这一项没动；否则按它开关「视角（LLM）」。
+	LLMEnabled *bool `json:"llmEnabled"`
 }
 
 // Settings 读一遍抽屉要显示的东西。
@@ -104,6 +110,8 @@ func (a *App) Settings() (UISettings, error) {
 		MCPEnabled:      cfg.MCPEnabled,
 		MCPCommand:      mcpExecutable(),
 		MCPArgs:         mcpArgs,
+		LLMEnabled:      cfg.LLMEnabled,
+		LLMHint:         llmConfiguredHint(),
 		ConfigPath:      path,
 	}
 
@@ -206,6 +214,9 @@ func (a *App) SaveSettings(input SettingsInput) (UISettings, error) {
 	}
 	if input.MCPEnabled != nil {
 		cfg.MCPEnabled = *input.MCPEnabled
+	}
+	if input.LLMEnabled != nil {
+		cfg.LLMEnabled = *input.LLMEnabled
 	}
 
 	// 界面不再问仓库地址（人提的：有「试连」就够了）——选着 Git 仓库、而配置里
@@ -465,4 +476,13 @@ func mcpExecutable() string {
 		return "AgentMemory.exe"
 	}
 	return exe
+}
+
+// llmConfiguredHint 说明模型环境变量齐不齐（不显示密钥本身）。
+func llmConfiguredHint() string {
+	client := llm.FromEnv()
+	if err := client.Configured(); err != nil {
+		return err.Error()
+	}
+	return "模型：" + client.ModelTag() + " · 端点：" + client.BaseURL
 }

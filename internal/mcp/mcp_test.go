@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +23,7 @@ func newServer(t *testing.T) (*Server, *store.DB, string) {
 	at := time.Date(2026, 10, 27, 9, 30, 0, 0, time.UTC)
 	s := channel.Session{
 		Channel: "claude-code", ID: "s1", Title: "搜索与记忆库",
-		ProjectPath: `D:\work\demo`, StartedAt: at, SourceFile: `C:\fake\s1.jsonl`,
+		ProjectPath: `D:\work\demo`, StartedAt: at, SourceFile: `C:/fake/s1.jsonl`,
 		Messages: []channel.Message{
 			{Role: channel.RoleUser, Time: at, Text: "记忆库怎么搜？"},
 			{Role: channel.RoleAssistant, Time: at.Add(time.Minute), Text: "按整词短语匹配。"},
@@ -88,14 +90,14 @@ func TestInitializeAndToolsList(t *testing.T) {
 		t.Fatalf("初始化结果不全: %+v", info)
 	}
 	tools := replies[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 5 {
-		t.Fatalf("应当有 5 个工具，实际 %d", len(tools))
+	if len(tools) != 6 {
+		t.Fatalf("应当有 6 个工具，实际 %d", len(tools))
 	}
 	names := map[string]bool{}
 	for _, one := range tools {
 		names[one.(map[string]any)["name"].(string)] = true
 	}
-	for _, want := range []string{"memory_search", "memory_get_session", "memory_facets", "memory_export_ndjson", "memory_stats"} {
+	for _, want := range []string{"memory_search", "memory_get_session", "memory_facets", "memory_export_ndjson", "memory_interpret", "memory_stats"} {
 		if !names[want] {
 			t.Errorf("工具清单缺 %s", want)
 		}
@@ -143,7 +145,7 @@ func TestSearchRequiresQuery(t *testing.T) {
 func TestGetSessionPaginates(t *testing.T) {
 	srv, _, _ := newServer(t)
 	first := converse(t, srv,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_get_session","arguments":{"channel":"claude-code","source_ref":"C:\\fake\\s1.jsonl","session_key":"s1","limit":2}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_get_session","arguments":{"channel":"claude-code","source_ref":"C:/fake/s1.jsonl","session_key":"s1","limit":2}}}`,
 	)
 	text, failed := toolText(t, first[0])
 	if failed {
@@ -250,5 +252,96 @@ func TestPackageIsReadOnly(t *testing.T) {
 				t.Errorf("%s 里出现了写操作 %q：MCP 必须只读（AC-17）", name, bad)
 			}
 		}
+	}
+}
+
+// fakeInterp 代替真模型：只记调用次数。
+type fakeInterp struct {
+	calls  int
+	reply  string
+	config error
+	fail   bool
+}
+
+func (f *fakeInterp) Configured() error { return f.config }
+func (f *fakeInterp) ModelTag() string  { return "fake-model" }
+func (f *fakeInterp) PromptTag() string { return "v-test" }
+func (f *fakeInterp) Interpret(ctx context.Context, perspective, transcript string) (string, error) {
+	f.calls++
+	if f.fail {
+		return "", errors.New("模型超时")
+	}
+	return f.reply, nil
+}
+
+// I-093：按需视角——第一次调模型，第二次命中缓存，force 时重新解读。
+func TestInterpretCachesBySession(t *testing.T) {
+	srv, _, _ := newServer(t)
+	fake := &fakeInterp{reply: `{"items":[{"topic":"记忆库"}]}`}
+	srv.LLM = fake
+
+	args := `{"perspective":"topic","channel":"claude-code","source_ref":"C:/fake/s1.jsonl","session_key":"s1"}`
+	first := converse(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_interpret","arguments":`+args+`}}`)
+	text, failed := toolText(t, first[0])
+	if failed {
+		t.Fatalf("第一次解读失败: %s", text)
+	}
+	if fake.calls != 1 || !strings.Contains(text, `"cached":false`) {
+		t.Fatalf("第一次应当真的调模型: calls=%d text=%s", fake.calls, text)
+	}
+
+	second := converse(t, srv, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"memory_interpret","arguments":`+args+`}}`)
+	text, _ = toolText(t, second[0])
+	if fake.calls != 1 || !strings.Contains(text, `"cached":true`) {
+		t.Fatalf("第二次应当命中缓存: calls=%d text=%s", fake.calls, text)
+	}
+
+	forced := `{"perspective":"topic","channel":"claude-code","source_ref":"C:/fake/s1.jsonl","session_key":"s1","force":true}`
+	third := converse(t, srv, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"memory_interpret","arguments":`+forced+`}}`)
+	if text, _ := toolText(t, third[0]); !strings.Contains(text, `"cached":false`) || fake.calls != 2 {
+		t.Fatalf("force 应当重新调模型: calls=%d text=%s", fake.calls, text)
+	}
+}
+
+// 没打开开关时明确说「没打开」，不是静默失败。
+func TestInterpretWithoutSwitch(t *testing.T) {
+	srv, _, _ := newServer(t)
+	replies := converse(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_interpret","arguments":{"perspective":"topic","channel":"claude-code","source_ref":"C:/fake/s1.jsonl","session_key":"s1"}}}`,
+	)
+	text, failed := toolText(t, replies[0])
+	if !failed || !strings.Contains(text, "没打开") {
+		t.Fatalf("应当提示没打开: failed=%v text=%s", failed, text)
+	}
+}
+
+// 缺环境变量时把人该配什么原样说出来。
+func TestInterpretReportsMissingConfig(t *testing.T) {
+	srv, _, _ := newServer(t)
+	srv.LLM = &fakeInterp{config: errors.New("LLM 视角没配置：缺环境变量 AGENTMEMORY_LLM_API_KEY")}
+	replies := converse(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_interpret","arguments":{"perspective":"todo","channel":"claude-code","source_ref":"C:/fake/s1.jsonl","session_key":"s1"}}}`,
+	)
+	text, failed := toolText(t, replies[0])
+	if !failed || !strings.Contains(text, "AGENTMEMORY_LLM_API_KEY") {
+		t.Fatalf("应当说清缺哪个变量: failed=%v text=%s", failed, text)
+	}
+}
+
+// 模型调用失败时按工具错误返回，不影响其它工具。
+func TestInterpretReportsModelFailure(t *testing.T) {
+	srv, _, _ := newServer(t)
+	srv.LLM = &fakeInterp{fail: true}
+	replies := converse(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_interpret","arguments":{"perspective":"decision","channel":"claude-code","source_ref":"C:/fake/s1.jsonl","session_key":"s1"}}}`,
+	)
+	text, failed := toolText(t, replies[0])
+	if !failed || !strings.Contains(text, "解读没做成") {
+		t.Fatalf("应当报解读失败: failed=%v text=%s", failed, text)
+	}
+	// 之后的普通工具照常工作。
+	again := converse(t, srv, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"memory_stats","arguments":{}}}`)
+	if _, failed := toolText(t, again[0]); failed {
+		t.Fatal("一次解读失败不该影响其它工具")
 	}
 }

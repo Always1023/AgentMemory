@@ -727,3 +727,42 @@ func TestMCPSwitchRoundTrips(t *testing.T) {
 		t.Fatalf("关回去失败: %+v %v", after, err)
 	}
 }
+
+// I-093：设置页「视角（LLM）」开关落进配置；没配环境变量时给出缺哪一项。
+func TestLLMSwitchRoundTrips(t *testing.T) {
+	useTempHome(t)
+	t.Setenv("AGENTMEMORY_LLM_API_KEY", "")
+	ui := settingsApp(t, &fakeSchtasks{})
+
+	before, err := ui.Settings()
+	if err != nil {
+		t.Fatalf("读设置: %v", err)
+	}
+	if before.LLMEnabled {
+		t.Fatal("默认应当是关的")
+	}
+	if !strings.Contains(before.LLMHint, "AGENTMEMORY_LLM_API_KEY") {
+		t.Fatalf("没配密钥时应当说缺哪个变量: %q", before.LLMHint)
+	}
+
+	on := true
+	after, err := ui.SaveSettings(SettingsInput{LLMEnabled: &on})
+	if err != nil {
+		t.Fatalf("保存: %v", err)
+	}
+	if !after.LLMEnabled {
+		t.Fatal("打开后读回来还是关的")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.LLMEnabled {
+		t.Fatal("配置里没记下来")
+	}
+
+	t.Setenv("AGENTMEMORY_LLM_API_KEY", "test-key")
+	if hint := llmConfiguredHint(); !strings.Contains(hint, "deepseek") {
+		t.Fatalf("配齐后应当显示默认模型与端点: %q", hint)
+	}
+}

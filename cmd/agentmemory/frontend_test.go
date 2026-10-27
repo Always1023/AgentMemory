@@ -1456,3 +1456,13 @@ func TestSettingsHasMCPSwitch(t *testing.T) {
 		}
 	}
 }
+
+// I-093：设置页要有「视角（LLM）」开关，打开后才可能调模型。
+func TestSettingsHasLLMSwitch(t *testing.T) {
+	front := readSource(t, appJS)
+	for _, want := range []string{`llmOn.id = "set-llm-on"`, "llmEnabled: llmOn.checked", `"视角（LLM）"`} {
+		if !strings.Contains(front, want) {
+			t.Errorf("设置页缺 %q", want)
+		}
+	}
+}
