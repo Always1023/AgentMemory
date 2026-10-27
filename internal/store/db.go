@@ -116,17 +116,6 @@ var migrations = []string{
 		value TEXT NOT NULL,
 		PRIMARY KEY(name, key)
 	)`,
-	// v3：视角表（I-093）。LLM 给出的结论是可重建的派生数据，缓存键里带模型与
-	// prompt 版本——换了模型或提示词就是另一条结论，不覆盖旧的。
-	`CREATE TABLE IF NOT EXISTS facets (
-		name           TEXT NOT NULL,
-		key            TEXT NOT NULL,
-		value          TEXT NOT NULL,
-		model          TEXT NOT NULL,
-		prompt_version TEXT NOT NULL,
-		created_at     TEXT NOT NULL DEFAULT '',
-		PRIMARY KEY(name, key, model, prompt_version)
-	)`,
 }
 
 // DB 是主库的读写句柄。

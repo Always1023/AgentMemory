@@ -7,7 +7,6 @@ package mcp
 // 要更多就再调一次，带 offset / limit。
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -90,17 +89,6 @@ func toolDefs() []toolDef {
 			}, "query"),
 		},
 		{
-			Name:        "memory_interpret",
-			Description: "按一个视角解读指定会话（话题 / 决策 / 待办）。需要先在设置里打开「视角」并配好模型环境变量；同样的问法第二次命中缓存。",
-			InputSchema: obj(map[string]any{
-				"perspective": str("视角：topic（话题）/ decision（决策）/ todo（待办）"),
-				"channel":     str("渠道 ID"),
-				"source_ref":  str("来源（会话文件路径或虚拟路径）"),
-				"session_key": str("渠道内会话标识"),
-				"force":       map[string]any{"type": "boolean", "description": "跳过缓存重新解读（可选）"},
-			}, "perspective", "channel", "source_ref", "session_key"),
-		},
-		{
 			Name:        "memory_stats",
 			Description: "主库概况：会话 / 事件总数、每个渠道的会话数、最近入库时间。",
 			InputSchema: obj(map[string]any{}),
@@ -131,8 +119,6 @@ func (s *Server) dispatch(name string, raw json.RawMessage) (string, bool) {
 		return s.facets(raw)
 	case "memory_export_ndjson":
 		return s.exportNDJSON(raw)
-	case "memory_interpret":
-		return s.interpret(raw)
 	case "memory_stats":
 		return s.stats()
 	default:
@@ -354,126 +340,4 @@ func mustJSON(v any) (string, bool) {
 		return "结果编码失败：" + err.Error(), true
 	}
 	return string(raw), false
-}
-
-// ── 按需视角（F16 / I-093）──────────────────────────────────────────────
-
-type interpretArgs struct {
-	Perspective string `json:"perspective"`
-	Channel     string `json:"channel"`
-	SourceRef   string `json:"source_ref"`
-	SessionKey  string `json:"session_key"`
-	Force       bool   `json:"force"`
-}
-
-// interpret 的逐条上限：会话太长时只取最后一段，避免把整本账发出去。
-const (
-	interpretMaxEvents  = 200
-	interpretMaxRunes   = 100000
-	interpretEventRunes = 4000
-)
-
-var perspectives = map[string]bool{"topic": true, "decision": true, "todo": true}
-
-func (s *Server) interpret(raw json.RawMessage) (string, bool) {
-	var args interpretArgs
-	if err := json.Unmarshal(raw, &args); err != nil {
-		return "参数看不懂：需要 perspective（topic / decision / todo）与 channel / source_ref / session_key", true
-	}
-	if s.LLM == nil {
-		return "LLM 视角没打开：到设置页「视角」打开，并配好三个环境变量后重启 AgentMemory", true
-	}
-	if err := s.LLM.Configured(); err != nil {
-		return err.Error(), true
-	}
-	if !perspectives[args.Perspective] {
-		return "不认识的视角：" + args.Perspective + "（可用 topic / decision / todo）", true
-	}
-	if args.Channel == "" || args.SourceRef == "" || args.SessionKey == "" {
-		return "channel / source_ref / session_key 都不能为空", true
-	}
-
-	refs, err := s.DB.LatestSessions()
-	if err != nil {
-		return "读会话目录失败：" + err.Error(), true
-	}
-	var found *store.SessionRef
-	for i := range refs {
-		r := refs[i]
-		if r.Channel == args.Channel && r.SourceRef == args.SourceRef && r.SessionKey == args.SessionKey {
-			found = &refs[i]
-			break
-		}
-	}
-	if found == nil {
-		return "没找到这个会话（channel / source_ref / session_key 要对得上）", true
-	}
-
-	name := "llm_" + args.Perspective
-	key := args.Channel + "|" + args.SourceRef + "|" + args.SessionKey
-	model := s.LLM.ModelTag()
-	prompt := s.LLM.PromptTag()
-
-	if !args.Force {
-		if cached, ok, err := s.DB.GetFacet(name, key, model, prompt); err == nil && ok {
-			return mustJSON(map[string]any{
-				"perspective": args.Perspective, "cached": true, "model": model,
-				"prompt_version": prompt, "created_at": cached.CreatedAt, "result": cached.Value,
-			})
-		}
-	}
-
-	events, err := s.DB.Events(found.RowID)
-	if err != nil {
-		return "读事件失败：" + err.Error(), true
-	}
-	transcript := buildTranscript(events)
-	if strings.TrimSpace(transcript) == "" {
-		return "这个会话没有可解读的正文", true
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	out, err := s.LLM.Interpret(ctx, args.Perspective, transcript)
-	if err != nil {
-		return "解读没做成：" + err.Error(), true
-	}
-
-	created := time.Now().Format(time.RFC3339Nano)
-	if err := s.DB.PutFacet(store.Facet{
-		Name: name, Key: key, Value: out, Model: model, PromptVersion: prompt, CreatedAt: created,
-	}); err != nil {
-		// 缓存写不进去不算失败：结论已经拿到了，如实说一句。
-		s.log().Warn("视角缓存没写成", "原因", err)
-	}
-	return mustJSON(map[string]any{
-		"perspective": args.Perspective, "cached": false, "model": model,
-		"prompt_version": prompt, "created_at": created, "result": out,
-	})
-}
-
-// buildTranscript 把事件拼成给模型的文本：跳过空正文，单条截断，整体也有上限。
-func buildTranscript(events []store.Event) string {
-	if len(events) > interpretMaxEvents {
-		events = events[len(events)-interpretMaxEvents:]
-	}
-	var b strings.Builder
-	for _, e := range events {
-		content := strings.TrimSpace(e.Content)
-		if content == "" {
-			continue
-		}
-		if r := []rune(content); len(r) > interpretEventRunes {
-			content = string(r[:interpretEventRunes]) + "…"
-		}
-		role := e.Role
-		if role == "" {
-			role = e.Kind
-		}
-		fmt.Fprintf(&b, "[%d %s] %s\n", e.Seq, role, content)
-		if b.Len() > interpretMaxRunes {
-			break
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

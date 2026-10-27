@@ -10,7 +10,6 @@ package mcp
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -28,16 +27,6 @@ type Server struct {
 	ArchiveDir string
 	Logger     *slog.Logger
 	Version    string
-	// LLM 是「按需视角」的执行器；开关关着时留空，工具会明确说没打开。
-	LLM Interpreter
-}
-
-// Interpreter 是 LLM 视角的最小能力集（用接口收口，用例塞假实现）。
-type Interpreter interface {
-	Configured() error
-	ModelTag() string
-	PromptTag() string
-	Interpret(ctx context.Context, perspective, transcript string) (string, error)
 }
 
 // DB 是本包只需要的只读能力集；用接口收口，方便用例塞假实现，也让「只读」看得见。
@@ -49,8 +38,6 @@ type DB interface {
 	DimensionNames() ([]string, error)
 	WriteSearchNDJSON(w io.Writer, query string, limit int) (int, error)
 	Stats() (store.Stats, error)
-	GetFacet(name, key, model, promptVersion string) (store.Facet, bool, error)
-	PutFacet(f store.Facet) error
 }
 
 // request / response 是 JSON-RPC 2.0 的最小形态。

@@ -930,17 +930,6 @@ function renderSettings() {
   mcpLabel.append(mcpOn, el("span", "", "允许外部 Agent 通过 MCP 读取这个库（只读）"));
   form.mcpHint = el("p", "hint");
 
-  // 视角（LLM，F16 / I-093）：默认关；打开后只有外部 Agent 指定会话时才会调模型。
-  const llmOn = document.createElement("input");
-  llmOn.type = "checkbox";
-  llmOn.id = "set-llm-on";
-  llmOn.checked = !!settings.llmEnabled;
-  llmOn.addEventListener("change", () => saveSettings({ llmEnabled: llmOn.checked }));
-  form.llmOn = llmOn;
-  const llmLabel = el("label", "choice");
-  llmLabel.append(llmOn, el("span", "", "允许模型按需解读会话（话题 / 决策 / 待办）"));
-  form.llmHint = el("p", "hint");
-
   // 选中哪一种备份方式，就跟哪一句话（话由后端给，见 ui.go 的 backupModeHints）。
   form.modeHint = el("p", "hint");
 
@@ -979,12 +968,6 @@ function renderSettings() {
       hint("打开后，dsh / Claude Code 这类外部 Agent 可以用 MCP 只读地查这个库：检索、读会话、读维度、导出切片、统计。它不能写库，也不能触发收集。配置时命令填 exe 路径、参数填 -mcp，两个框分开（ccs 里最容易把 -mcp 一起填进命令框）。"),
       inputRow(mcpLabel),
       form.mcpHint
-    ),
-    group(
-      "视角（LLM）",
-      hint("默认关。打开后，外部 Agent 经 MCP 指定某个会话时才会调一次模型；同样的问法会命中缓存，不重复花钱。密钥只从环境变量读：AGENTMEMORY_LLM_API_KEY，端点与模型可用 AGENTMEMORY_LLM_BASE_URL / AGENTMEMORY_LLM_MODEL 覆盖。"),
-      inputRow(llmLabel),
-      form.llmHint
     ),
     group("配置文件", hint(settings.configPath || "")),
     group(
@@ -1039,9 +1022,6 @@ function refreshSettings() {
     ? "命令：" + (settings.mcpCommand || "") + " ｜ 参数：" + (settings.mcpArgs || "-mcp")
     : "";
   form.mcpHint.hidden = !settings.mcpEnabled;
-  form.llmOn.checked = !!settings.llmEnabled;
-  form.llmHint.textContent = settings.llmHint || "";
-  form.llmHint.hidden = !settings.llmHint;
   renderSettingsFoot();
 
   // 选了 Git 仓库才挂上那一块；别的模式不打扰 git 与网络。
