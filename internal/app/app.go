@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -261,6 +262,18 @@ func Collect(cfg config.Config, logger *slog.Logger, deps Deps) (Result, error) 
 	if dimRegistry, derr := derive.Default(); derr == nil {
 		if derr := derive.Rebuild(db, dimRegistry); derr != nil {
 			logger.Warn("维度重建失败，下轮收集会再试", "原因", derr)
+		}
+	}
+
+	// 主库转储（F5 / I-088）：选了 git 备份时，先把 L1 增量转储备份进归档目录，
+	// 再让备份把整个目录提交上去。转储失败不挡收集，但要如实记一笔。
+	if cfg.Backup.Mode == config.BackupGit {
+		dumpDir := filepath.Join(cfg.ArchiveDir, "库转储")
+		stats, derr := db.DumpNDJSON(dumpDir)
+		if derr != nil {
+			logger.Warn("主库转储没写成，这次备份会缺主库数据", "原因", derr)
+		} else if stats.Appended {
+			logger.Info("主库转储已更新", "会话", stats.Sessions, "新事件", stats.Events)
 		}
 	}
 

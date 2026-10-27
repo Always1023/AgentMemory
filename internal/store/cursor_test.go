@@ -572,9 +572,14 @@ func TestLegacyLedgerFilesHaveNoWriters(t *testing.T) {
 		t.Fatal(err)
 	}
 	forbidden := []string{"os.WriteFile", "os.OpenFile", "os.Create", "os.Rename"}
+	// dump.go 是备份转储（I-088），写的是归档目录里的 NDJSON，不是账本文件。
+	allowed := map[string]bool{"dump.go": true}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if allowed[name] {
 			continue
 		}
 		raw, err := os.ReadFile(filepath.Join(".", name))
