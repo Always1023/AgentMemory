@@ -1,5 +1,7 @@
 # AgentMemory
 
+[English](README.en.md) · 中文
+
 **本机的 AI 对话记忆库。** 把 Claude Code、Codex、Cursor、OpenCode、DeepSeek Harness 等 20 多个工具的会话，收进一个本地 SQLite 库；Markdown 归档、全文搜索、喂模型的切片、统计与视角，全部从库里派生。默认只留本地，也可以通过只读的 MCP 接口交给其它 Agent 用。
 
 > 你的对话本来就散在各家的文件夹里；把它们收拢成一份**可检索、可重建、可交给 Agent** 的记忆。
@@ -139,3 +141,7 @@ cd cmd/agentmemory && GOFLAGS=-trimpath wails build
 ## 反馈
 
 问题与建议走 [Issues](https://github.com/Always1023/AgentMemory/issues)。这个工具只在本机跑，不上传任何对话内容。
+
+---
+
+`README.md` 与 `README.en.md` 保持同步：改一边时两边一起改。
