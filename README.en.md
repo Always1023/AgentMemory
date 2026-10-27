@@ -99,7 +99,9 @@ args = ['-mcp']
 
 **Common mistake**: putting `-mcp` inside the command field. The client treats the whole string as a filename and fails with `No such file or directory`. In managers such as ccs (CC Switch), command and arguments are separate fields — do not put both in one box. If a tool only has a command field, wrap it in a `.cmd` file containing `"<full path to exe>" -mcp`.
 
-Available tools: `memory_search`, `memory_get_session`, `memory_facets`, `memory_export_ndjson`, `memory_stats`.
+Available tools: `memory_search`, `memory_get_session`, `memory_facets`, `memory_export_ndjson`, `memory_query`, `memory_stats`.
+
+`memory_query` composes the stored granularity: `filter` (channel / project / time / event kind / role / tool / keyword) + `group_by` (channel / project / day / week / kind / tool) + `measures` (sessions / events / chars); 100 rows by default, up to 1000.
 
 The interface is **read-only**: it cannot modify the store, touch source directories, or trigger collection. Disable the switch in Settings and clients can no longer start it.
 
