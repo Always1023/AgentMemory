@@ -1,24 +1,42 @@
 name: Release
+
+# 私有仓库的发布：推 tag（v*）时构建并创建 Release。
+#
+# 为什么不用本地 API：本机只有另一账号的 HTTPS 凭据，对私有库没有权限；
+# 走仓库自带的 GITHUB_TOKEN 就不需要任何本地令牌。
+
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的已有 tag（例如 v0.3.0）"
+        required: true
+
 permissions:
   contents: write
+
 jobs:
   release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
           cache: true
+
       - name: Build desktop app
         working-directory: cmd/agentmemory
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
           wails build -trimpath
+
       - name: Package web extension
         shell: pwsh
         run: |
@@ -30,6 +48,7 @@ jobs:
           Copy-Item "extension/content" -Destination $stage -Recurse
           Copy-Item "extension/lib" -Destination $stage -Recurse
           Compress-Archive -Path "$stage/*" -DestinationPath "AgentMemory-Web-$version.zip" -Force
+
       - name: Package exe + plugin bundle
         shell: pwsh
         run: |
@@ -38,16 +57,19 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           Copy-Item "cmd/agentmemory/build/bin/AgentMemory.exe" "$dir/AgentMemory.exe"
           Copy-Item "AgentMemory-Web-$version.zip" "$dir/AgentMemory-Web-$version.zip"
-          Copy-Item "README.md" "$dir/README.md"
-          Compress-Archive -Path "$dir/*" -DestinationPath "AgentMemory-$env:GITHUB_REF_NAME-exe-plugin.zip" -Force
+          Copy-Item "docs/PORTABLE-README.md" "$dir/README.md"
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) { $tag = $env:GITHUB_REF_NAME }
+          Compress-Archive -Path "$dir/*" -DestinationPath "AgentMemory-$tag-exe-plugin.zip" -Force
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           body: |
             ## 下载选择
 
-            - `AgentMemory-${{ github.ref_name }}-exe-plugin.zip`：桌面版 + 网页版插件 + 说明（推荐，一次下齐）。
+            - `AgentMemory-${{ github.event.inputs.tag || github.ref_name }}-exe-plugin.zip`：桌面版 + 网页版插件 + 说明（推荐，一次下齐）。
             - `AgentMemory.exe`：只要桌面版。
             - `AgentMemory-Web-*.zip`：只要网页版插件。
           files: |
