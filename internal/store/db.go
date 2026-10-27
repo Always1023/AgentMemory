@@ -116,6 +116,10 @@ var migrations = []string{
 		value TEXT NOT NULL,
 		PRIMARY KEY(name, key)
 	)`,
+	// v3：组合查询（F17）需要的索引；只加索引，不动数据。
+	`CREATE INDEX IF NOT EXISTS idx_events_kind_ts ON events(kind, ts);
+	CREATE INDEX IF NOT EXISTS idx_sessions_channel_started ON sessions(channel, started_at);
+	CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_path)`,
 }
 
 // DB 是主库的读写句柄。

@@ -88,14 +88,14 @@ func TestInitializeAndToolsList(t *testing.T) {
 		t.Fatalf("初始化结果不全: %+v", info)
 	}
 	tools := replies[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 5 {
-		t.Fatalf("应当有 5 个工具，实际 %d", len(tools))
+	if len(tools) != 6 {
+		t.Fatalf("应当有 6 个工具，实际 %d", len(tools))
 	}
 	names := map[string]bool{}
 	for _, one := range tools {
 		names[one.(map[string]any)["name"].(string)] = true
 	}
-	for _, want := range []string{"memory_search", "memory_get_session", "memory_facets", "memory_export_ndjson", "memory_stats"} {
+	for _, want := range []string{"memory_search", "memory_get_session", "memory_facets", "memory_export_ndjson", "memory_query", "memory_stats"} {
 		if !names[want] {
 			t.Errorf("工具清单缺 %s", want)
 		}
@@ -250,5 +250,39 @@ func TestPackageIsReadOnly(t *testing.T) {
 				t.Errorf("%s 里出现了写操作 %q：MCP 必须只读（AC-17）", name, bad)
 			}
 		}
+	}
+}
+
+// F17：组合查询走 MCP——分组聚合可用，非法分组按工具错误返回。
+func TestQueryTool(t *testing.T) {
+	srv, _, _ := newServer(t)
+	replies := converse(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_query","arguments":{"group_by":["channel"],"measures":["sessions","events"]}}}`,
+	)
+	text, failed := toolText(t, replies[0])
+	if failed {
+		t.Fatalf("查询失败: %s", text)
+	}
+	var out struct {
+		Rows []struct {
+			Keys   map[string]string `json:"keys"`
+			Values map[string]int64  `json:"values"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("结果不是 JSON: %v (%s)", err, text)
+	}
+	if len(out.Rows) != 1 || out.Rows[0].Keys["channel"] != "claude-code" {
+		t.Fatalf("分组结果不对: %+v", out.Rows)
+	}
+	if out.Rows[0].Values["events"] != 3 {
+		t.Fatalf("事件数不对: %+v", out.Rows[0].Values)
+	}
+
+	bad := converse(t, srv,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"memory_query","arguments":{"group_by":["user_id"]}}}`,
+	)
+	if text, failed := toolText(t, bad[0]); !failed || !strings.Contains(text, "group_by") {
+		t.Fatalf("非法分组应当报错: failed=%v text=%s", failed, text)
 	}
 }

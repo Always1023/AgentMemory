@@ -10,6 +10,7 @@ package mcp
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -38,6 +39,7 @@ type DB interface {
 	DimensionNames() ([]string, error)
 	WriteSearchNDJSON(w io.Writer, query string, limit int) (int, error)
 	Stats() (store.Stats, error)
+	Query(ctx context.Context, req store.QueryRequest) (store.QueryResult, error)
 }
 
 // request / response 是 JSON-RPC 2.0 的最小形态。

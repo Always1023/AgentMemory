@@ -7,6 +7,7 @@ package mcp
 // 要更多就再调一次，带 offset / limit。
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -89,6 +90,32 @@ func toolDefs() []toolDef {
 			}, "query"),
 		},
 		{
+			Name:        "memory_query",
+			Description: "组合查询：按过滤 / 分组 / 度量聚合会话与事件（只读）。不传分组就是一行总计。",
+			InputSchema: obj(map[string]any{
+				"filter": map[string]any{
+					"type":        "object",
+					"description": "过滤条件（都可选，数组字段为多选）",
+					"properties": map[string]any{
+						"channel":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"project_prefix": str("项目路径前缀"),
+						"since":          str("起始时间，RFC3339，如 2026-09-01T00:00:00+08:00"),
+						"until":          str("结束时间，RFC3339"),
+						"kind":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "message / tool_call / tool_result"},
+						"role":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "user / assistant / tool"},
+						"tool":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "工具名"},
+						"query":          str("关键词（走全文索引，只算命中的事件）"),
+					},
+				},
+				"group_by": map[string]any{"type": "array", "items": map[string]any{"type": "string"},
+					"description": "channel / project / day / week / kind / tool，可组合"},
+				"measures": map[string]any{"type": "array", "items": map[string]any{"type": "string"},
+					"description": "sessions / events / chars，默认会话数 + 事件数"},
+				"limit":  num("最多返回几行，默认 100，上限 1000"),
+				"offset": num("跳过几行，默认 0"),
+			}),
+		},
+		{
 			Name:        "memory_stats",
 			Description: "主库概况：会话 / 事件总数、每个渠道的会话数、最近入库时间。",
 			InputSchema: obj(map[string]any{}),
@@ -119,6 +146,8 @@ func (s *Server) dispatch(name string, raw json.RawMessage) (string, bool) {
 		return s.facets(raw)
 	case "memory_export_ndjson":
 		return s.exportNDJSON(raw)
+	case "memory_query":
+		return s.query(raw)
 	case "memory_stats":
 		return s.stats()
 	default:
@@ -315,6 +344,18 @@ func (s *Server) exportNDJSON(raw json.RawMessage) (string, bool) {
 		return "写切片失败：" + closeErr.Error(), true
 	}
 	return mustJSON(map[string]any{"count": n, "path": path})
+}
+
+func (s *Server) query(raw json.RawMessage) (string, bool) {
+	var req store.QueryRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return "参数看不懂：filter / group_by / measures / limit / offset 里有一项格式不对", true
+	}
+	out, err := s.DB.Query(context.Background(), req)
+	if err != nil {
+		return "查询没做成：" + err.Error(), true
+	}
+	return mustJSON(out)
 }
 
 func (s *Server) stats() (string, bool) {
